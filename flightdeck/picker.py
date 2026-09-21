@@ -786,8 +786,8 @@ def _run_tmux_seq(seq):
 # Fallback BASE port of fzf's HTTP API (--listen). When you enter a menu, the
 # tmux hook the bash command installs sends a `reload` there so the list is
 # refreshed without reopening fzf. The value in force is `menu_port` in the
-# config, which the bash command reads with `python3 -m flightdeck.config
-# menu_port`: there is one source, not two copies.
+# config, which the bash command reads by running the `flightdeck.config` module
+# with `menu_port`: there is one source, not two copies.
 LISTEN_PORT = config.DEFAULTS["menu_port"]
 
 

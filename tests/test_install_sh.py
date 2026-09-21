@@ -1084,7 +1084,10 @@ class TestFzf(unittest.TestCase):
         # A lean PATH, for the same reason the tmux-less tests have one: on an
         # Ubuntu runner apt's fzf sits in /usr/bin, and with the default PATH
         # "no fzf" quietly became "the runner's fzf" -- 0.44 on 24.04, above the
-        # floor, so the run carried on and exited 0 instead of ending here.
+        # floor, so the run carried on and exited 0 instead of ending here. The
+        # list is every external `install.sh` calls before the decline point:
+        # a tool added there has to be added here, or this fails as "command
+        # not found" rather than as the thing it is about.
         with tempfile.TemporaryDirectory() as tmp:
             machine = Machine(tmp, fzf=None, uname=("Darwin", "arm64"),
                               fzf_base=fzf_release(tmp),

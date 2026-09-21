@@ -92,7 +92,7 @@ bind-key    -T root         MouseDown1Pane    select-pane -t = \\; send-keys -M
 OUR_KEYS = """\
 bind-key    -T prefix       c                 new-window
 bind-key    -T prefix       j                 run-shell -b "'/x/bin/flightdeck' goto-menu"
-bind-key    -T prefix       n                 run-shell -b "PYTHONPATH='/x' python3 -m flightdeck.handover handover '#{pane_id}'"
+bind-key    -T prefix       n                 run-shell -b "'/x/bin/flightdeck' _py flightdeck.handover handover '#{pane_id}'"
 bind-key    -T root         F12               if-shell -F '#{m/r:^flightdeck(-[0-9]+)?$,#{session_name}}' 'switch-client -l' 'run-shell -b "\\"/x/bin/flightdeck\\" goto-menu"'
 """
 

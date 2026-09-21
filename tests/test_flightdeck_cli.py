@@ -29,11 +29,12 @@ from flightdeck import config
 
 CMD = config.code_dir() / "bin" / "flightdeck"
 
-# Every run of the command happens from HERE, and never from the repository root.
-# `python3 -m` puts the working directory on the path, so a run from the root
-# would find the `flightdeck` package whatever the command believes its code
-# directory to be -- and a broken computation of it (a symlink not followed, say)
-# would pass unnoticed. A user runs the command from wherever they happen to be.
+# Every run of the command happens from HERE, and never from the repository root:
+# a user runs the command from wherever they happen to be, and a cwd that is not
+# the code directory is what keeps a broken computation of that directory (a
+# symlink not followed, say) from passing unnoticed. The opposite case -- a cwd
+# holding a `flightdeck/` package that must NOT win over the code -- is
+# `TestTheCodeDirectoryWinsOverTheCwd`.
 NEUTRAL_CWD = tempfile.mkdtemp(prefix="flightdeck-cli-cwd-")
 atexit.register(shutil.rmtree, NEUTRAL_CWD, True)
 
@@ -388,7 +389,7 @@ class TestThePortFormula(unittest.TestCase):
     """The other half of the pin `test_picker.test_the_bash_command_reads_the_
     same_base_port` left open.
 
-    The bash reads `python3 -m flightdeck.config menu_port` rather than
+    The bash runs the `flightdeck.config` module with `menu_port` rather than
     carrying the port as a literal, so the pin is: the base the bash
     ends up using is the number that command prints, and a per-window menu
     (`flightdeck-N`) adds its own number to it, exactly like `picker.port_for`.
@@ -628,12 +629,18 @@ class TestInitAndQuitOnAServerOfOurOwn(unittest.TestCase):
         on a runner with 3.7c, while the same bindings listed fine.
         """
         r = _tmux("list-keys", "-T", table)
-        if r.returncode != 0:
-            return ""
+        self.assertEqual(r.returncode, 0, r.stderr)
+        lines = r.stdout.splitlines()
+        # "Bound to nothing" is only an answer when the table was read in the
+        # shape matched below; a tmux that printed bindings some other way would
+        # otherwise make every key look unbound, and the `quit` test would pass
+        # for the wrong reason.
+        self.assertTrue(any(re.match(r"^bind-key\s+(?:-r\s+)?-T\s+%s\s"
+                                     % re.escape(table), line)
+                            for line in lines), r.stdout)
         pattern = re.compile(r"^bind-key\s+(?:-r\s+)?-T\s+%s\s+%s\s"
                              % (re.escape(table), re.escape(key)))
-        return "".join(line + "\n" for line in r.stdout.splitlines()
-                       if pattern.match(line))
+        return "".join(line + "\n" for line in lines if pattern.match(line))
 
     def test_init_binds_the_keys_and_the_status_bar(self):
         r = self._init()
@@ -822,10 +829,6 @@ class TestInitAndQuitOnAServerOfOurOwn(unittest.TestCase):
         self.assertIn("F12", r.stdout)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestTheCodeDirectoryWinsOverTheCwd(unittest.TestCase):
     """Run from a directory holding a `flightdeck/` package, the command still
     runs ITS code.
@@ -849,3 +852,6 @@ class TestTheCodeDirectoryWinsOverTheCwd(unittest.TestCase):
         self.assertNotEqual(r.stdout.strip(), "31337", r.stdout)
         self.assertTrue(r.stdout.strip().isdigit(), r.stdout)
 
+
+if __name__ == "__main__":
+    unittest.main()

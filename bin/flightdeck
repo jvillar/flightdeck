@@ -80,11 +80,15 @@ PYRUN=(env "PYTHONPATH=$SM" python3 -c "$PYBOOT" "$SM")
 # The commands tmux and fzf hold as STRINGS (the status bar, the menu loop, the
 # handover key, the list reloads) come back in through `_py`, so the one-liner is
 # spelled in one place and never has to survive tmux's and fzf's quoting. It is
-# dispatched HERE, before anything below starts a python of its own, so a bar
-# refresh still costs one bash and one python.
+# dispatched HERE, before anything below starts a python of its own: a bar
+# refresh costs the resolution of `$0` above (two `dirname`, one `cd && pwd`)
+# and one python, not a second python for the port. The path is assumed to hold
+# neither quote character: a `'` in it would break these four strings (as it
+# did before, with the same quoting).
 PY="'$CMD' _py"
 if [ "${1:-}" = _py ]; then
   shift
+  [ $# -gt 0 ] || { echo "flightdeck: _py needs a module name" >&2; exit 2; }
   exec "${PYRUN[@]}" "$@"
 fi
 
@@ -507,7 +511,7 @@ case "${1:-}" in
   _port)
     # Internal, and only for the tests: the port this command would talk to for a
     # given menu. It is what pins that the bash and `picker.port_for` read the
-    # same base (`python3 -m flightdeck.config menu_port`) and apply the same
+    # same base (`flightdeck.config menu_port`, run as a module) and apply the same
     # formula, without a test having to start an fzf to find out.
     port_of "${2:-flightdeck}"
     exit 0
