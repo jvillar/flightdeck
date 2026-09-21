@@ -1,0 +1,80 @@
+name: release
+
+# A tag and nothing else. `v*` is the shape `install.sh` and `flightdeck update`
+# build their download URLs out of, so a tag of any other shape would publish a
+# release neither of them can ask for.
+on:
+  push:
+    tags: ['v*']
+
+# The only thing this workflow needs beyond reading the repository: creating the
+# release and uploading its one asset.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tag has to agree with the VERSION file, and that is checked FIRST,
+      # before anything is built and long before anything is published.
+      # `flightdeck --version` reads the VERSION file, so a tag that disagrees
+      # with it would put out a release whose command reports a different number
+      # from the one people downloaded -- and a release is the one thing here
+      # that cannot be taken back.
+      - name: the tag and the VERSION file must agree
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="$(cat VERSION)"
+          if [ "$tag" != "v$version" ]; then
+            echo "the tag is $tag and the VERSION file says $version." >&2
+            echo "Tag v$version instead, or set VERSION to ${tag#v} and tag again." >&2
+            exit 1
+          fi
+          echo "$tag matches VERSION ($version)"
+
+      # The asset's NAME is a contract, not a detail: `install.sh` downloads
+      # `releases/latest/download/flightdeck.tar.gz` and `flightdeck update`
+      # downloads `releases/download/<tag>/flightdeck.tar.gz`. Renaming what
+      # `make tarball` produces, or uploading it under another name below,
+      # breaks updating for every installation already out there.
+      - name: build the release tarball
+        run: make tarball
+
+      # The notes are this version's section of CHANGELOG.md, word for word.
+      # A version with no section does not get released: notes nobody wrote are
+      # worse than no release at all.
+      #
+      # The section runs from its own heading to the next `## ` heading. It is
+      # matched as plain TEXT and not as a regular expression, because a version
+      # is full of dots and a dot in a pattern matches anything -- `## v0.1.0`
+      # and a hypothetical `## v0x1y0` would be the same heading.
+      - name: the notes, out of the changelog
+        run: |
+          version="$(cat VERSION)"
+          awk -v v="$version" '
+            BEGIN { head = "## v" v }
+            !inside && ($0 == head || substr($0, 1, length(head) + 1) == head " ") {
+              inside = 1
+              next
+            }
+            inside && substr($0, 1, 3) == "## " { exit }
+            inside { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md has no '## v$version' section with anything under it." >&2
+            echo "Write one before tagging: it is what the release notes are." >&2
+            exit 1
+          fi
+          echo "--- release notes ---"
+          cat notes.md
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/flightdeck.tar.gz \
+            --title "Flightdeck $GITHUB_REF_NAME" \
+            --notes-file notes.md

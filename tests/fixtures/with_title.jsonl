@@ -1,0 +1,5 @@
+{"type":"attachment","cwd":"/Users/dev/Documents/code/demo","timestamp":"2026-05-31T14:04:10.570Z"}
+{"type":"ai-title","aiTitle":"Old automatic title","sessionId":"with_title"}
+{"type":"user","cwd":"/Users/dev/Documents/code/demo"}
+{"type":"custom-title","customTitle":"My own title","sessionId":"with_title"}
+{"type":"ai-title","aiTitle":"New automatic title","sessionId":"with_title"}

@@ -1,0 +1,82 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "transcript_path": "/home/user/.claude/projects/-home-user-projects-demo/11111111-2222-3333-4444-555555555555.jsonl",
+  "cwd": "/home/user/projects/demo",
+  "scratchpad_dir": "/tmp/claude-1000/-home-user-projects-demo/11111111-2222-3333-4444-555555555555/scratchpad",
+  "prompt_id": "99999999-8888-7777-6666-555555555555",
+  "effort": {
+    "level": "xhigh"
+  },
+  "session_name": "demo session",
+  "model": {
+    "id": "claude-fable-5-1",
+    "display_name": "Fable 5.1"
+  },
+  "workspace": {
+    "current_dir": "/home/user/projects/demo",
+    "project_dir": "/home/user/projects/demo",
+    "added_dirs": []
+  },
+  "version": "2.1.270",
+  "output_style": {
+    "name": "default"
+  },
+  "cost": {
+    "total_cost_usd": 370.6125020000005,
+    "total_duration_ms": 706651102,
+    "total_api_duration_ms": 27142577,
+    "total_lines_added": 24716,
+    "total_lines_removed": 436
+  },
+  "context_window": {
+    "total_input_tokens": 798330,
+    "total_output_tokens": 86,
+    "context_window_size": 1000000,
+    "current_usage": {
+      "input_tokens": 32,
+      "output_tokens": 86,
+      "cache_creation_input_tokens": 2559,
+      "cache_read_input_tokens": 795739
+    },
+    "used_percentage": 80,
+    "remaining_percentage": 20
+  },
+  "exceeds_200k_tokens": true,
+  "prompt_cache": {
+    "warm": true,
+    "caching_observed": true,
+    "ttl": "1h",
+    "expires_at": 1789532960,
+    "requests": 227,
+    "misses": 3,
+    "expected_rebuilds": 0,
+    "hit_ratio": 0.9845587875666785,
+    "cache_write_tokens": 2204290,
+    "miss_recache_tokens": 1450197,
+    "last_miss_at": 1789509216,
+    "last_miss_cause": {
+      "causes": [
+        "ttl_expired_1h"
+      ]
+    },
+    "miss_causes": {
+      "messages_rewritten": 1,
+      "ttl_expired_1h": 2
+    },
+    "recache_tokens_if_cold": 798330
+  },
+  "fast_mode": false,
+  "thinking": {
+    "enabled": true
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 3,
+      "resets_at": 1789545000
+    },
+    "seven_day": {
+      "used_percentage": 54,
+      "resets_at": 1789675200
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "cwd": "/home/user/projects/demo",
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "conversation_id": "11111111-2222-3333-4444-555555555555",
+  "transcript_path": "/home/user/.gemini/antigravity/brain/11111111-2222-3333-4444-555555555555/.system_generated/logs/transcript.jsonl",
+  "model": {
+    "id": "Gemini 3.8 Flash (High)",
+    "display_name": "Gemini 3.8 Flash (High)",
+    "effort": "high"
+  },
+  "workspace": {
+    "current_dir": "/home/user/projects/demo",
+    "project_dir": "/home/user/projects/demo"
+  },
+  "version": "1.1.28",
+  "context_window": {
+    "total_input_tokens": 25664,
+    "total_output_tokens": 79,
+    "context_window_size": 1048576,
+    "used_percentage": 2.447509765625,
+    "remaining_percentage": 97.552490234375,
+    "current_usage": {
+      "input_tokens": 18115,
+      "output_tokens": 79,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+    }
+  },
+  "exceeds_200k_tokens": false,
+  "product": "antigravity",
+  "quota": {
+    "3p-weekly": {
+      "remaining_fraction": 1,
+      "reset_time": "2026-09-23T04:55:56Z",
+      "reset_in_seconds": 604691
+    },
+    "gemini-weekly": {
+      "remaining_fraction": 1,
+      "reset_time": "2026-09-23T04:55:56Z",
+      "reset_in_seconds": 604691
+    }
+  },
+  "agent_state": "idle",
+  "vcs": {
+    "type": "git"
+  },
+  "sandbox": {
+    "enabled": false
+  },
+  "plan_tier": "Antigravity Starter Quota",
+  "email": "user@example.com",
+  "terminal_width": 180
+}

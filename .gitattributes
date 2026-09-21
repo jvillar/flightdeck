@@ -1,0 +1,31 @@
+# `export-ignore` is `git archive`'s, and `git archive` is what `make tarball`
+# builds a release with: everything listed here stays out of the tarball that
+# `install.sh` and `flightdeck update` download.
+#
+# What stays behind is the repository's own machinery -- the CI definitions and
+# the git dotfiles -- none of which means anything on a machine Flightdeck is
+# installed on. The `tests/` and `docs/` directories are deliberately NOT here:
+# a release somebody unpacks can be run against its own suite, and the docs are
+# how they find out what it does.
+#
+# `docs/img/` IS here, though: 651 KB of pictures of the menu -- 360 KB of it
+# the demo GIF, the rest the two stills -- taken to be looked at on
+# GitHub, would be most of a release's download for somebody who is never going
+# to open them. The markdown that links them still travels; on an unpacked
+# release those three links point at nothing.
+#
+# `scripts/` is NOT here, and the reason is mechanical rather than a matter of
+# taste: `tests/` travels so a release can be run against its own suite, and
+# `tests/test_ansi2html.py` loads `scripts/ansi2html.py` by path. Excluding the
+# directory would put a failing test in every release.
+#
+# Mind the reading order: `git archive` takes these rules from the `.gitattributes`
+# in the COMMIT it is packing, not from the working tree. A change here only
+# takes effect once it is committed.
+# `.superpowers/` is a scratch directory some agent tooling creates; it is never
+# tracked, and the rule is here so it cannot ship if a checkout ever tracks one.
+.github         export-ignore
+.gitignore      export-ignore
+.gitattributes  export-ignore
+.superpowers    export-ignore
+docs/img        export-ignore

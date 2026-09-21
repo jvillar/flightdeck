@@ -1,0 +1,524 @@
+#!/usr/bin/env bash
+# flightdeck -> attach to the menu (the tmux session `flightdeck`, running the
+#               picker in a loop; if another window is already looking at it, to
+#               a menu of your OWN, `flightdeck-N`, which dies when you let go).
+#   flightdeck init          -> (re)install the bindings, the status bar and the
+#                               refresh hook. Idempotent.
+#   flightdeck restart       -> a fresh menu: to pick up new picker code without
+#                               touching the work sessions.
+#   flightdeck quit          -> turn the cockpit off: kill the menus and give
+#                               tmux back its stock bar and keys. The work is
+#                               never touched.
+#   flightdeck goto-menu     -> internal: guarantee `flightdeck` exists AND is
+#                               running the picker, and jump to it. This is what
+#                               F12 and prefix+j run.
+#   flightdeck refresh-menu  -> internal: reload ONE menu's list (the tmux hook
+#                               calls it when a client enters a menu);
+#                               refresh-menus -> every live menu (the session
+#                               hook calls it when a session's badge changes).
+#
+# This file lives in `bin/` and not at the root of the code directory: a file
+# cannot share the name of the `flightdeck/` package directory, and the state
+# hook spells the path here as `bin/flightdeck`.
+
+# The code directory: the one holding the `flightdeck` package, `bin/`'s parent.
+#
+# `$0` is followed through symlinks first, because it usually IS one: the command
+# reaches PATH by being linked into `~/.local/bin`, and `dirname` of the LINK is
+# that directory, not the code — the code directory would come out as
+# `~/.local`, and every python call, the menu loop and the status bar would be
+# pointing at nothing. Resolved by hand, one hop at a time, rather than with
+# `readlink -f`: that flag is GNU's, and the bash 3.2 macOS ships does not have a
+# `readlink` that guarantees it. A relative target is relative to the LINK's own
+# directory, not to the working directory the command was run from.
+src="$0"
+while [ -L "$src" ]; do
+  dir="$(cd "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case $src in /*) ;; *) src="$dir/$src" ;; esac
+done
+SM="$(cd "$(dirname "$src")/.." && pwd)"
+CMD="$SM/bin/flightdeck"
+
+# An fzf the installer downloaded for a machine whose own was missing or too old
+# lives in `<data>/bin` -- beside `current`, which is what `$SM` is once
+# Flightdeck is installed. Everything that runs fzf runs it through this command
+# (the menu loop is `flightdeck`'s pane, the reloads are its `--listen`), so
+# putting that directory first here is what makes the downloaded one the one in
+# use, without a line in anybody's rc file and without touching a system
+# directory.
+#
+# It asks for the `fzf` and not merely for the directory: in a source checkout
+# `$SM` is the clone and `$(dirname "$SM")/bin` is whatever happens to sit next
+# to it, which on somebody's machine could be a `bin/` full of other things.
+FD_FZF_DIR="$(dirname "$SM")/bin"
+if [ -x "$FD_FZF_DIR/fzf" ]; then
+  PATH="$FD_FZF_DIR:$PATH"
+  export PATH
+fi
+
+TMUXC=(tmux); [ -n "${FLIGHTDECK_TMUX_SOCKET:-}" ] && TMUXC+=(-L "$FLIGHTDECK_TMUX_SOCKET")
+SOCK_ARGS=""; [ -n "${FLIGHTDECK_TMUX_SOCKET:-}" ] && SOCK_ARGS="-L $FLIGHTDECK_TMUX_SOCKET"
+
+# Everything Python goes through `-m` with PYTHONPATH pointing at the code
+# directory. Running a module FILE by its path does not work (measured): the
+# modules import each other by package name (`from flightdeck import config`),
+# and python puts the FILE's own directory on the path, not the code directory,
+# so the import dies with ModuleNotFoundError. `-m` with PYTHONPATH works from
+# any cwd, which is what a tmux binding, a status bar and an fzf reload all need.
+PY="PYTHONPATH='$SM' python3"
+PYRUN=(env "PYTHONPATH=$SM" python3)   # the same, for calls made from here
+
+# The base port of the menus' fzf API, asked of the config ONCE per run. The
+# config CLI answers with the value in force, and falls back to the default on
+# its own when the file is unreadable; the fallback here is for the machine where
+# python is missing or broken, where the command still has to know where to talk.
+PORT="$("${PYRUN[@]}" -m flightdeck.config menu_port 2>/dev/null)"
+[ -n "$PORT" ] || PORT=42707
+
+# The N of a per-window menu (`flightdeck-N`), or nothing at all — and rc 1 —
+# when the name is not one. DIGITS AND NOTHING ELSE: a tmux session can be
+# called anything, ours included, and the obvious glob `flightdeck-[0-9]*`
+# matches `flightdeck-2x` as well. `$(( PORT + 2x ))` is a bash arithmetic error
+# ("value too great for base"), which left the port EMPTY — the reload went to
+# `localhost:` and bash printed the error over whatever tmux had on screen.
+menu_index() {
+  case "$1" in
+    flightdeck-*) ;;
+    *) return 1 ;;
+  esac
+  n="${1#flightdeck-}"
+  case "$n" in
+    ""|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$n"
+}
+
+# Each menu's --listen port: `flightdeck` -> PORT, `flightdeck-N` -> PORT+N. The
+# same formula as `picker.port_for`: two fzf cannot listen on the same port, and
+# since the menu became per-window there are several at a time. Anything else
+# gets the base, which is what the main menu listens on.
+port_of() {
+  local index
+  if index="$(menu_index "$1")"; then
+    # `10#` forces base ten. Without it bash reads a LEADING ZERO as octal, so
+    # `flightdeck-08` died with "value too great for base" (empty port, the
+    # error painted over tmux — the very failure the all-digits guard above was
+    # written to close) and `flightdeck-010` quietly answered PORT+8.
+    echo $(( PORT + 10#$index ))
+  else
+    echo "$PORT"
+  fi
+}
+
+# Reload one menu's list through its API (--listen). `track-current` in front:
+# the cursor follows the SAME session after the reload even if the list is
+# reordered (fzf identifies the row by the hidden key, `--id-nth 2` in the
+# picker); with a bare `reload` it stays in the same POSITION, i.e. over another
+# row, right when you were about to press Enter (measured with fzf 0.72). It
+# exits 0 on purpose: the fzf may not be listening (F12 has just created the
+# menu; the picker is between two rounds) and a non-zero rc would be sung by tmux
+# on screen with a "returned 7" that tells nobody anything.
+reload_menu() {
+  curl -s -m 1 -XPOST "localhost:$(port_of "$1")" \
+    -d "track-current+reload($PY -m flightdeck.picker feed)" >/dev/null 2>&1
+  return 0
+}
+
+LOOP="$PY -m flightdeck.picker loop"
+
+# The command's own path, quoted for the shell tmux hands it to, with the quotes
+# escaped for tmux's parser.
+#
+# The escaped double quotes are what the REFRESH HOOK needs. There the whole
+# `run-shell -b "..."` travels inside a SINGLE-quoted tmux argument (`if -F
+# '<pattern>' '<run-shell ...>'`, itself the argument of `set-hook`), and tmux
+# ends a single-quoted argument at the first `'` it meets — so a path written in
+# plain single quotes closes that argument early and the rest of it splits on the
+# spaces of the path. Measured on an isolated server with a code directory whose
+# path had spaces:
+#   one space  -> `if-shell` gets one argument too many, takes it as its ELSE
+#                 branch, and `show-hooks` reads back a mangled `run-shell` that
+#                 never refreshes anything;
+#   two spaces -> `command if-shell: too many arguments (need at most 3)`, rc 1,
+#                 and the hook is not set at all.
+# A `\"` inside a double-quoted tmux argument has no such effect, which is why
+# this form round-trips.
+#
+# In the F12 binding's position single quotes would in fact do: there the command
+# string is `bind-key`'s own argv element, straight from the shell, and tmux does
+# not parse that level again (measured as well — it round-tripped intact
+# with spaces in the path). It uses the same form for one reason only: one
+# spelling of the path for every binding beats two that differ by a subtlety.
+# Where the command string is `run-shell`'s own argument (prefix+j, prefix+n)
+# tmux does not parse it again either and plain single quotes are what is used.
+CMD_Q="\\\"$CMD\\\""
+TO_MENU="run-shell -b \"$CMD_Q goto-menu\""
+REFRESH_ONE="run-shell -b \"$CMD_Q refresh-menu #{session_name}\""
+
+# The `flightdeck` session ready to use: created if it was not there, and with
+# the picker running if the pane had fallen to a shell (which is what Esc
+# leaves). Without this, F12 took you to a mute pane or nowhere at all.
+#
+# `=flightdeck` = EXACT name. Without the `=`, tmux resolves `-t flightdeck` by
+# PREFIX when `flightdeck` does not exist: with only `flightdeck-2` alive,
+# `has-session -t flightdeck` said yes (measured in tmux 3.6a), the main menu was
+# never recreated and every entry was born as another ephemeral `flightdeck-N`.
+# Seen live, with a `flightdeck-2` alive and no `flightdeck`.
+# MIND THE FORM (measured in 3.6a): `=flightdeck` is right in SESSION commands
+# (has-session, kill-session); in PANE ones (display-message -t, respawn-pane -t)
+# it has to be `=flightdeck:` — with a bare `=flightdeck`, display-message returns
+# EMPTY with rc 0 and respawn-pane fails with "can't find pane".
+ensure_menu() {
+  if ! "${TMUXC[@]}" has-session -t =flightdeck 2>/dev/null; then
+    "${TMUXC[@]}" new-session -d -s flightdeck "$LOOP"
+    return
+  fi
+  # `Python` with a capital on macOS, `python3` on Linux: the point is telling
+  # "the picker is still up" from "there is a shell here".
+  case "$("${TMUXC[@]}" display-message -p -t =flightdeck: '#{pane_current_command}' 2>/dev/null)" in
+    [Pp]ython*) ;;   # the picker is still standing: we leave it alone
+    *) "${TMUXC[@]}" respawn-pane -k -t =flightdeck: "$LOOP" ;;
+  esac
+}
+
+# The menu is PER WINDOW, not shared: two clients attached to the same session
+# are two cloned screens (same cursor, same selection), and that only makes sense
+# for the work sessions and for a pin, which really are one thing. So if
+# `flightdeck` already has a client, whoever arrives gets a menu of their OWN
+# (`flightdeck-2`, `flightdeck-3`...) with its own picker, which dies when they
+# let go of it: the only permanent one is `flightdeck`.
+my_menu() {
+  local busy; busy="$("${TMUXC[@]}" display-message -p -t =flightdeck: '#{session_attached}' 2>/dev/null)"
+  if [ "${busy:-0}" = "0" ]; then echo flightdeck; return; fi
+  local n=2
+  while "${TMUXC[@]}" has-session -t "=flightdeck-$n" 2>/dev/null; do n=$((n+1)); done
+  "${TMUXC[@]}" new-session -d -s "flightdeck-$n" "$LOOP"
+  echo "flightdeck-$n"
+}
+
+# `destroy-unattached on` is so literal that it kills the session before anybody
+# manages to attach (measured): it has to be turned on AFTER the attach. It is
+# done from tmux itself, deferred, once the client is already inside.
+ephemeral_when_released() {
+  [ "$1" = flightdeck ] && return   # the main one is permanent
+  "${TMUXC[@]}" run-shell -b "sleep 1; tmux $SOCK_ARGS set-option -t '$1' destroy-unattached on"
+}
+
+install_tmux() {
+  "${TMUXC[@]}" set -g status-interval 5
+  "${TMUXC[@]}" set -g status-right "#($PY -m flightdeck.statusbar status)"
+  # A dark bar: over tmux's default green the notice's yellow cannot be read. And
+  # the right-hand side is about 40 columns by default, which cut our line off.
+  "${TMUXC[@]}" set -g status-style bg=colour235,fg=colour250
+  "${TMUXC[@]}" set -g status-right-length 100
+  # Left: just the session name, prettily. The window list is hidden: with one
+  # window per session it is noise, and tmux renames it after the command running
+  # inside (claude's binary is called "2.1.233", and that showed up in the bar).
+  "${TMUXC[@]}" set -g status-left "#[bold] #S #[default] "
+  "${TMUXC[@]}" set -g status-left-length 30
+  "${TMUXC[@]}" set -g window-status-format ""
+  "${TMUXC[@]}" set -g window-status-current-format ""
+  # When the session you are in dies (an exit in its shell), do NOT detach the
+  # client (the default spat you out to the terminal outside): jump to the last
+  # active session, which coming from the cockpit is the menu.
+  "${TMUXC[@]}" set -g detach-on-destroy off
+  # The terminal window's title (the iTerm2 tab, the Termius one): the TITLE of
+  # the conversation if there is one (`@title`, written by the state hook from a
+  # /rename or the handover's -n — "pricing 3" says more than "pricing"), and
+  # failing that the NAME of the tmux session, which is yours (Ctrl-N/rename).
+  # Without this the terminal just said "tmux". It refreshes on its own when you
+  # jump or when it changes.
+  "${TMUXC[@]}" set -g set-titles on
+  "${TMUXC[@]}" set -g set-titles-string '#{?#{!=:#{@title},},#{@title},#S}'
+  # Both keys go through `flightdeck goto-menu` (and not a bare
+  # `switch-client -t flightdeck`) so they revive the menu if you killed it or
+  # left it on a shell.
+  "${TMUXC[@]}" bind-key -T prefix j run-shell -b "'$CMD' goto-menu"
+  # prefix+n = HANDOVER of this pane's agent: close it and open the next one with
+  # the numbered title ("pricing 2" -> "pricing 3"). The `#{pane_id}` is expanded
+  # by run-shell itself (verified in tmux 3.6a), so the script knows which pane
+  # the key was pressed in. It overrides the stock `next-window` on purpose: the
+  # cockpit hides the window list (one window per session), so jumping windows
+  # went nowhere.
+  "${TMUXC[@]}" bind-key -T prefix n run-shell -b "$PY -m flightdeck.handover handover '#{pane_id}'"
+  # F12 = the menu<->session TOGGLE (inside the menu it goes back to the last
+  # session). "I am in a menu" = `flightdeck` or one of the per-window
+  # `flightdeck-N`: F12 bounces from both. prefix+j is NOT the same key: it is
+  # one-way only, and from inside a menu it does nothing. It exists for keyboards
+  # without a comfortable F12 (typically the phone's), not as a replacement.
+  "${TMUXC[@]}" bind-key -n F12 if -F '#{m/r:^flightdeck(-[0-9]+)?$,#{session_name}}' 'switch-client -l' "$TO_MENU"
+  # When a client enters a menu, reload its fzf list (through --listen).
+  "${TMUXC[@]}" set-hook -g client-session-changed \
+    "if -F '#{m/r:^flightdeck(-[0-9]+)?$,#{session_name}}' '$REFRESH_ONE'"
+}
+
+# Everything "turn the cockpit off" means on the tmux side, shared word for word
+# by `quit` and by `uninstall`: the options back to stock, our three keys undone,
+# the refresh hook unset and the menus killed. The WORK sessions -- and the pins,
+# which are the user's own commands and not our infrastructure -- are never
+# touched.
+#
+# Deliberate order, the same one `restart` uses and for the same reason: the
+# config and the message go BEFORE the kills, because if this is running in the
+# menu's own shell (which is what Esc leaves) the last kill takes this script
+# down with it, and by then everything that had to happen has happened. The
+# message is the caller's, because `quit` ends here and `uninstall` is only
+# getting started.
+stock_tmux() {
+  if "${TMUXC[@]}" has-session 2>/dev/null; then
+    for opt in status-interval status-right status-style status-right-length \
+               status-left status-left-length window-status-format \
+               window-status-current-format detach-on-destroy \
+               set-titles set-titles-string; do
+      "${TMUXC[@]}" set -gu "$opt"
+    done
+    "${TMUXC[@]}" unbind-key -T prefix j 2>/dev/null
+    "${TMUXC[@]}" unbind-key -n F12 2>/dev/null
+    "${TMUXC[@]}" bind-key -T prefix n next-window   # the stock one
+    "${TMUXC[@]}" set-hook -gu client-session-changed
+    # `set -gu` gives back tmux's FACTORY value, not the user's: a status bar
+    # they had configured, their `set-titles`, anything their own tmux config
+    # sets is gone with ours. Sourcing that config again puts their settings
+    # back on top -- which is what "give tmux back its own bar" has to mean for
+    # somebody who had configured one. Errors are swallowed on purpose: a config
+    # with one line this tmux does not understand must not make turning the
+    # cockpit off a failure.
+    for conf in "$HOME/.tmux.conf" "${XDG_CONFIG_HOME:-$HOME/.config}/tmux/tmux.conf"; do
+      if [ -f "$conf" ]; then
+        "${TMUXC[@]}" source-file "$conf" >/dev/null 2>&1 || true
+        break
+      fi
+    done
+  fi
+  echo "$1"
+  for m in $("${TMUXC[@]}" list-sessions -F '#{session_name}' 2>/dev/null | grep -E '^flightdeck-[0-9]+$'); do
+    "${TMUXC[@]}" kill-session -t "=$m" 2>/dev/null
+  done
+  "${TMUXC[@]}" kill-session -t =flightdeck 2>/dev/null
+}
+
+usage_line() {
+  echo "usage: flightdeck [init|restart|quit|install|update|uninstall|doctor|pin|statusline|goto-menu|refresh-menu <session>|refresh-menus|--help|--version]"
+}
+
+usage() {
+  usage_line
+  cat <<EOF
+
+  (no arguments)   enter the menu, creating or attaching the \`flightdeck\` session
+  init             (re)install the tmux bindings, status bar and refresh hook
+  restart          a fresh menu, to pick up new code; the work is untouched
+  quit             turn the cockpit off and give tmux back its own keys and bar
+  install          set every agent on this machine up: hooks, status line, pins
+                   (--yes answers the questions for you, --force replaces
+                   codex's own status line items)
+  update           fetch the newest Flightdeck, put it in place, reinstall and
+                   restart the menu (--version vX.Y.Z picks a release)
+  uninstall        take Flightdeck off this machine: the agents' hooks and status
+                   lines, the command, the rc line and the code (--purge removes
+                   its state and configuration too)
+  doctor           check this machine: versions, PATH, hooks, keys, pins, locale
+  pin              the fixed menu rows: pin list | pin add <preset> | pin remove
+  statusline       the status line: statusline claude|agy (payload on stdin) | --demo
+                   | --mode own|wrap|stack | --restore | --status
+                   (the last three take --tool claude|agy; claude by default)
+  goto-menu        internal: what F12 and prefix+j run
+  refresh-menu     internal: reload one menu's list (the tmux hook calls it)
+  refresh-menus    internal: reload every live menu's list (the state hook does)
+  --help           this text
+  --version        the version of this Flightdeck
+EOF
+}
+
+case "${1:-}" in
+  refresh-menu)
+    # `$2` = the menu the client has just entered (the hook passes it as
+    # #{session_name}); without it, the main one.
+    reload_menu "${2:-flightdeck}"
+    exit 0
+    ;;
+  refresh-menus)
+    # Every live menu (`flightdeck` and the per-window `flightdeck-N`), each on
+    # its own port. The state hook launches it when what the menu paints of a
+    # session changes (waiting for you / working / asking you...): without this, a
+    # menu left open in a window showed the picture from when you entered.
+    for s in $("${TMUXC[@]}" list-sessions -F '#{session_name}' 2>/dev/null); do
+      if [ "$s" = flightdeck ] || menu_index "$s" >/dev/null; then reload_menu "$s"; fi
+    done
+    exit 0
+    ;;
+  goto-menu)
+    # Called by the bindings, which run INSIDE tmux: hence switch-client (and not
+    # attach), like `flightdeck` with no arguments when you are already inside.
+    # WHICH menu? The one belonging to the client that pressed the key: if its
+    # last session was a menu (`flightdeck` or `flightdeck-N`), that one; if not,
+    # the main one — or one of its own if another window is already looking at
+    # the main one (the menu is per window).
+    ensure_menu
+    last="$("${TMUXC[@]}" display-message -p '#{client_last_session}' 2>/dev/null)"
+    case "$last" in
+      flightdeck) "${TMUXC[@]}" has-session -t "=$last" 2>/dev/null && target="$last" ;;
+      *) menu_index "$last" >/dev/null \
+           && "${TMUXC[@]}" has-session -t "=$last" 2>/dev/null && target="$last" ;;
+    esac
+    [ -n "${target:-}" ] || target="$(my_menu)"
+    ephemeral_when_released "$target"
+    exec "${TMUXC[@]}" switch-client -t "$target"
+    ;;
+  init)
+    # Options, bindings and hooks live INSIDE the tmux server: with no server
+    # there is nowhere to install them (tmux answers "no server running" to every
+    # line) and claiming success would be a lie. The menu — and with it the
+    # server — is brought up by `flightdeck` with no arguments.
+    if ! "${TMUXC[@]}" has-session 2>/dev/null; then
+      echo "flightdeck: no live tmux server — start the menu with 'flightdeck' (no arguments)" >&2
+      exit 1
+    fi
+    install_tmux; echo "flightdeck: tmux configured"; exit 0
+    ;;
+  restart)
+    # A fresh menu WITHOUT touching the work sessions. It exists because the
+    # picker loop runs the code its pane started with: to pick up changes it has
+    # to be recreated (goto-menu considers it alive and does not respawn it).
+    #
+    # Deliberate order, the same as in `quit` and for the same reason: the
+    # `respawn-pane -k` KILLS the menu's pane, so if `restart` was launched from
+    # that very menu's shell (which is what Esc leaves) it takes this script down
+    # with it. Everything that has to happen goes BEFORE; nothing is left after.
+    #
+    # The pre-release cockpit Flightdeck was ported from killed its fixed
+    # accounts session here as well, so it too came back fresh. Flightdeck has
+    # no fixed second session: its place is taken by the pins, and a pin is a
+    # command of the user's own (`cswap tui`, a `top`, a notes file) whose
+    # session is started by pressing Enter on its row. Killing someone else's
+    # command to pick up code of OURS is not the same trade, so the pins are
+    # left running.
+    new=0
+    # If the menu is not there it has to be created BEFORE `install_tmux`: with no
+    # live tmux server the options and bindings have nowhere to go. And then
+    # there is no respawn to do — that pane is born with the new code already.
+    if ! "${TMUXC[@]}" has-session -t =flightdeck 2>/dev/null; then
+      "${TMUXC[@]}" new-session -d -s flightdeck "$LOOP"
+      new=1
+    fi
+    install_tmux
+    echo "flightdeck: fresh menu (F12 or 'flightdeck' to enter)"
+    [ "$new" = 1 ] || "${TMUXC[@]}" respawn-pane -k -t =flightdeck: "$LOOP"
+    # The per-window menus (`flightdeck-N`) are running the code they were born
+    # with too: they get respawned the same way, where they are (they stay
+    # attached and keep their destroy-unattached; only the loop inside changes).
+    # Without this, an old `flightdeck-N` was receiving the hook's reloads with
+    # the new line format.
+    for s in $("${TMUXC[@]}" list-sessions -F '#{session_name}' 2>/dev/null); do
+      menu_index "$s" >/dev/null && "${TMUXC[@]}" respawn-pane -k -t "$s" "$LOOP" 
+    done
+    exit 0
+    ;;
+  quit)
+    # Turn the cockpit off: the menus go and tmux goes back to the bar and keys
+    # it had before Flightdeck. The WORK sessions (and their agents) carry on
+    # exactly as they were, and so do the pins' — they are the user's own
+    # commands, not our infrastructure to kill (the reason given under `restart`).
+    stock_tmux "flightdeck: cockpit off — your work sessions carry on; 'flightdeck' turns it back on"
+    exit 0
+    ;;
+  pin)
+    # The pinned menu rows (list / add / remove). Everything it does is read and
+    # write `config.json`, so it is python's job entirely; the exit code is its
+    # own (1 = it refused, 2 = the words do not parse).
+    shift
+    "${PYRUN[@]}" -m flightdeck.pins "$@"
+    exit $?
+    ;;
+  statusline)
+    # The status line itself: `flightdeck statusline claude|agy` paints the line
+    # for the payload on stdin, `--demo` shows both with example values, and
+    # `--mode`, `--restore` and `--status` manage which line the user sees (for
+    # claude, or for the tool named by `--tool`). Everything it
+    # does is python's; the arguments are passed on untouched, exit code and all
+    # (2 = the words do not parse, 1 = it parsed and could not be done).
+    shift
+    "${PYRUN[@]}" -m flightdeck.statusline "$@"
+    exit $?
+    ;;
+  doctor)
+    # Versions, minimums, PATH, what is registered in each agent, the tmux keys,
+    # the pins and the locale. It is python's entirely; the exit code is its own
+    # (1 = something Flightdeck cannot work without, 2 = the words do not parse).
+    shift
+    "${PYRUN[@]}" -m flightdeck.doctor "$@"
+    exit $?
+    ;;
+  install)
+    # Every agent on this machine set up in one go: the hooks, the status line,
+    # the migration off an older personal installation, the pins and a warning
+    # about tmux keys somebody else had taken, ending with the doctor. It is
+    # python's entirely; the arguments and the exit code pass through untouched
+    # (1 = an agent could not be set up or the doctor found something broken,
+    # 2 = the words do not parse).
+    shift
+    "${PYRUN[@]}" -m flightdeck.install "$@"
+    exit $?
+    ;;
+  uninstall)
+    # Take Flightdeck off the machine. The tmux half happens HERE and FIRST: it
+    # is `quit`'s, word for word, and it has to be done while there still is a
+    # cockpit to turn off. Then `exec`, so that no bash is left reading a script
+    # file that the python about to run may delete — bash reads a script as it
+    # goes, and a file replaced underneath it resumes at a byte offset that now
+    # means something else.
+    #
+    # One consequence, and it is the same one `quit` has always had: run from
+    # the menu's OWN shell, the kill of that session takes this script down
+    # before python starts, so only the tmux half happens. The command is still
+    # linked at that point (python is what removes it), so running
+    # `flightdeck uninstall` again from anywhere else finishes the job.
+    shift
+    stock_tmux "flightdeck: cockpit off — taking Flightdeck out"
+    exec "${PYRUN[@]}" -m flightdeck.uninstall "$@"
+    ;;
+  update)
+    # Fetch the new code, put it where the hooks already point, reinstall and
+    # restart the menus. Python's entirely, and `exec`ed for the same reason as
+    # `uninstall`: this very file is inside the directory being replaced.
+    shift
+    exec "${PYRUN[@]}" -m flightdeck.update "$@"
+    ;;
+  _port)
+    # Internal, and only for the tests: the port this command would talk to for a
+    # given menu. It is what pins that the bash and `picker.port_for` read the
+    # same base (`python3 -m flightdeck.config menu_port`) and apply the same
+    # formula, without a test having to start an fzf to find out.
+    port_of "${2:-flightdeck}"
+    exit 0
+    ;;
+  _path)
+    # Internal, and only for the tests, like `_port`: the PATH this command runs
+    # everything with. It is what pins that a downloaded fzf in `<data>/bin`
+    # really does come first, without a test having to open a menu to find out.
+    printf '%s\n' "$PATH"
+    exit 0
+    ;;
+  --help|-h|help)
+    usage
+    exit 0
+    ;;
+  --version|-V)
+    # The root `VERSION` file is the ONE source: `config.version()` reads the
+    # same one, so the bash and the python can never report different versions,
+    # and a release bumps a file instead of rewriting this script.
+    v="$(cat "$SM/VERSION" 2>/dev/null)"
+    echo "flightdeck ${v:-unknown}"
+    exit 0
+    ;;
+  "")
+    ensure_menu
+    install_tmux
+    target="$(my_menu)"
+    ephemeral_when_released "$target"
+    if [ -n "${TMUX:-}" ]; then exec "${TMUXC[@]}" switch-client -t "$target"
+    else exec "${TMUXC[@]}" attach -t "$target"; fi
+    ;;
+  *) echo "flightdeck: unknown command '$1'" >&2; usage_line >&2; exit 1;;
+esac

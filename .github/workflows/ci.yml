@@ -1,0 +1,162 @@
+name: ci
+
+# Every push and every pull request. Not "main only": the thing most worth
+# knowing about a branch is whether it still builds a release somebody could
+# install, and that is worth knowing before the merge rather than after.
+on: [push, pull_request]
+
+jobs:
+  # ── the suite, on every platform and python Flightdeck claims to support ───
+  tests:
+    name: tests (${{ matrix.os }}, python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every cell runs to the end. One red cell must not cancel the other
+      # five: the failures worth catching here are the ones that happen on ONE
+      # platform or ONE python, and a cancelled run hides exactly those.
+      fail-fast: false
+      matrix:
+        # ubuntu-22.04 is the worst case supported -- apt's tmux there is
+        # 3.2a and its fzf 0.29, the two floors everything degrades against --
+        # and ubuntu-24.04 is a current Linux. macOS is the platform Flightdeck
+        # was written on.
+        os: [ubuntu-22.04, ubuntu-24.04, macos-latest]
+        # 3.9 is the version every module is written against (and what an
+        # unmodified Ubuntu 20.04 or a stock macOS has); 3.12 is what a current
+        # machine runs.
+        python: ["3.9", "3.12"]
+        # If a cell has to go, this is where. The one to expect is python 3.9 on
+        # macos-latest, which is arm64: setup-python installs what
+        # actions/python-versions publishes, and the old 3.9 builds for that
+        # architecture are the thinnest part of that list.
+        #   exclude:
+        #     - os: macos-latest
+        #       python: "3.9"
+        # Left commented on purpose: nothing has run yet, so excluding it now
+        # would be guessing. Plan 3 decides on the first real run.
+    env:
+      # A socket nothing listens on, so nothing here can reach a real tmux
+      # server. `tests/__init__.py` defaults it as well; it is named here too
+      # because a default that lives in a python file is one changed import away
+      # from not applying, and the cost of saying it twice is a line.
+      FLIGHTDECK_TMUX_SOCKET: no-such-socket
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "${{ matrix.python }}"
+
+      # The suite runs the real bash command against a tmux server of its OWN
+      # (`-L fdtest`), and skips those tests when there is no tmux at all -- so
+      # a runner without one would go green having checked less than it looks.
+      # A package manager is allowed HERE and nowhere else: `install.sh` only
+      # ever prints the command for the machine it is on, never runs it.
+      - name: tmux and fzf (apt)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux fzf
+
+      - name: tmux and fzf (brew)
+        if: runner.os == 'macOS'
+        run: brew install tmux fzf
+
+      - run: make test
+
+  # ── the two shell scripts ─────────────────────────────────────────────────
+  lint:
+    name: shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub's Ubuntu images already ship a shellcheck. Installing it anyway
+      # costs a couple of seconds and means this job does not quietly depend on
+      # that staying true.
+      - name: shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      # `make lint` lints each script in the dialect it is written in: the
+      # command as bash, the installer as POSIX sh.
+      - run: make lint
+
+  # ── a real installation, on a machine with no agent on it ─────────────────
+  smoke:
+    name: installer smoke test
+    # ubuntu-22.04 deliberately, and left exactly as it comes. apt's fzf there
+    # is 0.29, BELOW the 0.36 the menu needs, so `install.sh --yes` takes the
+    # offer it prints and downloads the pinned fzf from its GitHub release,
+    # checksum and all. That download is the point of this job, not an accident
+    # of the runner -- which also means this job needs to reach github.com, and
+    # a failure to do so is a real red, not a flake to retry past.
+    runs-on: ubuntu-22.04
+    env:
+      FLIGHTDECK_TMUX_SOCKET: no-such-socket
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: tmux and fzf (apt)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux fzf
+
+      # The release the installer is about to fetch, built from this very
+      # commit. `make tarball` packs HEAD, so what is installed below is what a
+      # tagged release of this commit would put on GitHub.
+      - name: build the release tarball
+        run: make tarball
+
+      # `claude` is NOT on this runner, and that is the case being tested: a
+      # machine with no agent installed at all has to install cleanly, with
+      # warnings rather than errors. `--yes` is how a run with nobody at the
+      # keyboard says yes on purpose; without it the fzf download
+      # would be declined and the install would stop.
+      - name: install from the tarball
+        run: FLIGHTDECK_TARBALL_URL="file://$PWD/dist/flightdeck.tar.gz" sh install.sh --yes
+
+      # The rc line the installer wrote has not been sourced by anything, so
+      # every step from here puts the link's directory on PATH itself.
+      - name: the command answers, with the version that was packed
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          flightdeck --version
+          test "$(flightdeck --version)" = "flightdeck $(cat VERSION)"
+
+      # Exit 0 is the assertion. A machine with no `claude`, no codex, no agy
+      # and no tmux server produces warnings (`!`) and no `✗`, and the doctor
+      # only fails on a `✗`.
+      - name: the doctor finds nothing broken
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          flightdeck doctor
+
+      # Four assertions, and ONE PER LINE. Both halves of that matter.
+      #
+      # `-e` and `-L` are both asked of each link because they miss opposite
+      # things: `-e` follows the link, so it answers "not there" for one whose
+      # target has been removed -- and the code directory IS removed by this
+      # point -- while `-L` sees the link itself.
+      #
+      # And they are not joined with `&&`, which is where a working assertion
+      # would quietly stop being one. Under `set -e` (which is how GitHub runs
+      # these steps) a command that is not the LAST in an `&&` list does not
+      # trigger errexit, so `test ! -e X && test ! -L X` short-circuits and
+      # passes when the link is still there AND still resolves -- exactly the
+      # regression that matters, an uninstall leaving a working `flightdeck` on
+      # somebody's PATH. Measured: with such a link in place the joined form
+      # exits 0 and these four lines exit 1.
+      #
+      # The two links are not removed by the same code either, so neither one
+      # covers for the other: `fld` has a path of its own that leaves it alone
+      # when it was somebody else's to begin with.
+      - name: uninstall takes both links back off
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          flightdeck uninstall
+          test ! -e "$HOME/.local/bin/flightdeck"
+          test ! -L "$HOME/.local/bin/flightdeck"
+          test ! -e "$HOME/.local/bin/fld"
+          test ! -L "$HOME/.local/bin/fld"
