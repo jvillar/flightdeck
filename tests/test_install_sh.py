@@ -1081,9 +1081,17 @@ class TestFzf(unittest.TestCase):
             self.assertNotIn("cursor will not stay", out)
 
     def test_declining_with_no_fzf_at_all_is_the_end_of_it(self):
+        # A lean PATH, for the same reason the tmux-less tests have one: on an
+        # Ubuntu runner apt's fzf sits in /usr/bin, and with the default PATH
+        # "no fzf" quietly became "the runner's fzf" -- 0.44 on 24.04, above the
+        # floor, so the run carried on and exited 0 instead of ending here.
         with tempfile.TemporaryDirectory() as tmp:
             machine = Machine(tmp, fzf=None, uname=("Darwin", "arm64"),
-                              fzf_base=fzf_release(tmp))
+                              fzf_base=fzf_release(tmp),
+                              path_tools=("sed", "grep", "awk", "tr", "wc", "cat",
+                                          "tail", "head", "uname", "python3", "curl",
+                                          "tar", "shasum", "sha256sum", "mktemp",
+                                          "dirname", "readlink", "date"))
             code, out = run_on_a_tty(machine)
         self.assertEqual(code, 1, out)
         self.assertIn("brew install tmux fzf", out)

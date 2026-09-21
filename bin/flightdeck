@@ -60,20 +60,39 @@ fi
 TMUXC=(tmux); [ -n "${FLIGHTDECK_TMUX_SOCKET:-}" ] && TMUXC+=(-L "$FLIGHTDECK_TMUX_SOCKET")
 SOCK_ARGS=""; [ -n "${FLIGHTDECK_TMUX_SOCKET:-}" ] && SOCK_ARGS="-L $FLIGHTDECK_TMUX_SOCKET"
 
-# Everything Python goes through `-m` with PYTHONPATH pointing at the code
-# directory. Running a module FILE by its path does not work (measured): the
-# modules import each other by package name (`from flightdeck import config`),
-# and python puts the FILE's own directory on the path, not the code directory,
-# so the import dies with ModuleNotFoundError. `-m` with PYTHONPATH works from
-# any cwd, which is what a tmux binding, a status bar and an fzf reload all need.
-PY="PYTHONPATH='$SM' python3"
-PYRUN=(env "PYTHONPATH=$SM" python3)   # the same, for calls made from here
+# Every python call runs a MODULE of the code directory, from any cwd, which is
+# what a tmux binding, a status bar and an fzf reload all need. Not with `-m`,
+# though: `python3 -m` puts the CURRENT DIRECTORY first on sys.path, ahead of
+# PYTHONPATH, so run from a directory holding a `flightdeck/` package -- a clone
+# of this repository is one -- `-m flightdeck.install` imports and runs THAT
+# package instead of the installed code (measured: an `install.sh` run from a
+# checkout reported the checkout as its code, and `uninstall` then left the
+# links alone as "not pointing at Flightdeck's code"). `-P` and PYTHONSAFEPATH,
+# which fix exactly this, are python 3.11 and the floor is 3.9. So the one-liner
+# below does what `-m` does, with the code directory in the slot the cwd would
+# take: `runpy.run_module` is what `-m` calls, `run_name=__name__` is "__main__"
+# here (this IS the main program), and `alter_sys` gives the module the argv it
+# would have had. Running a module FILE by its path is no alternative: the
+# modules import each other by package name, and python would put the file's own
+# directory on the path, not the code directory.
+PYBOOT='import sys,runpy;sys.path[0]=sys.argv.pop(1);runpy.run_module(sys.argv.pop(1),run_name=__name__,alter_sys=True)'
+PYRUN=(env "PYTHONPATH=$SM" python3 -c "$PYBOOT" "$SM")
+# The commands tmux and fzf hold as STRINGS (the status bar, the menu loop, the
+# handover key, the list reloads) come back in through `_py`, so the one-liner is
+# spelled in one place and never has to survive tmux's and fzf's quoting. It is
+# dispatched HERE, before anything below starts a python of its own, so a bar
+# refresh still costs one bash and one python.
+PY="'$CMD' _py"
+if [ "${1:-}" = _py ]; then
+  shift
+  exec "${PYRUN[@]}" "$@"
+fi
 
 # The base port of the menus' fzf API, asked of the config ONCE per run. The
 # config CLI answers with the value in force, and falls back to the default on
 # its own when the file is unreadable; the fallback here is for the machine where
 # python is missing or broken, where the command still has to know where to talk.
-PORT="$("${PYRUN[@]}" -m flightdeck.config menu_port 2>/dev/null)"
+PORT="$("${PYRUN[@]}" flightdeck.config menu_port 2>/dev/null)"
 [ -n "$PORT" ] || PORT=42707
 
 # The N of a per-window menu (`flightdeck-N`), or nothing at all — and rc 1 —
@@ -121,11 +140,11 @@ port_of() {
 # on screen with a "returned 7" that tells nobody anything.
 reload_menu() {
   curl -s -m 1 -XPOST "localhost:$(port_of "$1")" \
-    -d "track-current+reload($PY -m flightdeck.picker feed)" >/dev/null 2>&1
+    -d "track-current+reload($PY flightdeck.picker feed)" >/dev/null 2>&1
   return 0
 }
 
-LOOP="$PY -m flightdeck.picker loop"
+LOOP="$PY flightdeck.picker loop"
 
 # The command's own path, quoted for the shell tmux hands it to, with the quotes
 # escaped for tmux's parser.
@@ -207,7 +226,7 @@ ephemeral_when_released() {
 
 install_tmux() {
   "${TMUXC[@]}" set -g status-interval 5
-  "${TMUXC[@]}" set -g status-right "#($PY -m flightdeck.statusbar status)"
+  "${TMUXC[@]}" set -g status-right "#($PY flightdeck.statusbar status)"
   # A dark bar: over tmux's default green the notice's yellow cannot be read. And
   # the right-hand side is about 40 columns by default, which cut our line off.
   "${TMUXC[@]}" set -g status-style bg=colour235,fg=colour250
@@ -241,7 +260,7 @@ install_tmux() {
   # the key was pressed in. It overrides the stock `next-window` on purpose: the
   # cockpit hides the window list (one window per session), so jumping windows
   # went nowhere.
-  "${TMUXC[@]}" bind-key -T prefix n run-shell -b "$PY -m flightdeck.handover handover '#{pane_id}'"
+  "${TMUXC[@]}" bind-key -T prefix n run-shell -b "$PY flightdeck.handover handover '#{pane_id}'"
   # F12 = the menu<->session TOGGLE (inside the menu it goes back to the last
   # session). "I am in a menu" = `flightdeck` or one of the per-window
   # `flightdeck-N`: F12 bounces from both. prefix+j is NOT the same key: it is
@@ -428,7 +447,7 @@ case "${1:-}" in
     # write `config.json`, so it is python's job entirely; the exit code is its
     # own (1 = it refused, 2 = the words do not parse).
     shift
-    "${PYRUN[@]}" -m flightdeck.pins "$@"
+    "${PYRUN[@]}" flightdeck.pins "$@"
     exit $?
     ;;
   statusline)
@@ -439,7 +458,7 @@ case "${1:-}" in
     # does is python's; the arguments are passed on untouched, exit code and all
     # (2 = the words do not parse, 1 = it parsed and could not be done).
     shift
-    "${PYRUN[@]}" -m flightdeck.statusline "$@"
+    "${PYRUN[@]}" flightdeck.statusline "$@"
     exit $?
     ;;
   doctor)
@@ -447,7 +466,7 @@ case "${1:-}" in
     # the pins and the locale. It is python's entirely; the exit code is its own
     # (1 = something Flightdeck cannot work without, 2 = the words do not parse).
     shift
-    "${PYRUN[@]}" -m flightdeck.doctor "$@"
+    "${PYRUN[@]}" flightdeck.doctor "$@"
     exit $?
     ;;
   install)
@@ -458,7 +477,7 @@ case "${1:-}" in
     # (1 = an agent could not be set up or the doctor found something broken,
     # 2 = the words do not parse).
     shift
-    "${PYRUN[@]}" -m flightdeck.install "$@"
+    "${PYRUN[@]}" flightdeck.install "$@"
     exit $?
     ;;
   uninstall)
@@ -476,14 +495,14 @@ case "${1:-}" in
     # `flightdeck uninstall` again from anywhere else finishes the job.
     shift
     stock_tmux "flightdeck: cockpit off — taking Flightdeck out"
-    exec "${PYRUN[@]}" -m flightdeck.uninstall "$@"
+    exec "${PYRUN[@]}" flightdeck.uninstall "$@"
     ;;
   update)
     # Fetch the new code, put it where the hooks already point, reinstall and
     # restart the menus. Python's entirely, and `exec`ed for the same reason as
     # `uninstall`: this very file is inside the directory being replaced.
     shift
-    exec "${PYRUN[@]}" -m flightdeck.update "$@"
+    exec "${PYRUN[@]}" flightdeck.update "$@"
     ;;
   _port)
     # Internal, and only for the tests: the port this command would talk to for a

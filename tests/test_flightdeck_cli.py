@@ -17,6 +17,7 @@ menu, which a test has no business doing.
 import atexit
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -52,7 +53,7 @@ DEAD_SOCKET = "fdtest-no-such-server"
 TEST_PORT = 43117
 
 
-def _run(args, cmd=None, **env_extra):
+def _run(args, cmd=None, cwd=None, **env_extra):
     """The command, with the environment pointed away from anything real.
 
     `cmd` runs a different path to the same script (a symlink to it), which is
@@ -76,7 +77,24 @@ def _run(args, cmd=None, **env_extra):
             if name not in env_extra:
                 env[name] = os.path.join(env_extra["HOME"], *tail)
     return subprocess.run([str(cmd or CMD)] + list(args), capture_output=True,
-                          text=True, env=env, timeout=30, cwd=NEUTRAL_CWD)
+                          text=True, env=env, timeout=30, cwd=cwd or NEUTRAL_CWD)
+
+
+def _path_with_a_fzf_above_the_floor(tmp):
+    """PATH with a stub `fzf` first, one that reports a version above the floor.
+
+    The run ends with the doctor, and the doctor grades whatever `fzf` the
+    machine has: on a runner whose own is below the floor (Ubuntu 22.04's apt
+    ships 0.29) that is a ✗ and the run exits 1 -- about the runner, not about
+    the install these tests are watching. The stub keeps the verdict about the
+    install; the doctor's own grading of fzf has its own tests.
+    """
+    bindir = Path(tmp) / "fzf-bin"
+    bindir.mkdir()
+    stub = bindir / "fzf"
+    stub.write_text("#!/bin/sh\necho 0.74.4\n")
+    stub.chmod(0o755)
+    return "%s:%s" % (bindir, os.environ.get("PATH", ""))
 
 
 def _tmux(*args):
@@ -165,7 +183,8 @@ class TestInstall(unittest.TestCase):
         home.mkdir()
         return _run(["install"] + list(args), HOME=str(home),
                     FLIGHTDECK_CONFIG=str(Path(tmp) / "config.json"),
-                    FLIGHTDECK_STATE_DIR=str(Path(tmp) / "state")), home
+                    FLIGHTDECK_STATE_DIR=str(Path(tmp) / "state"),
+                    PATH=_path_with_a_fzf_above_the_floor(tmp)), home
 
     def test_it_sets_up_a_bare_home_and_exits_0(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -598,13 +617,23 @@ class TestInitAndQuitOnAServerOfOurOwn(unittest.TestCase):
     def _key(self, table, key):
         """What `key` is bound to in `table`, or "" when it is bound to nothing.
 
-        `list-keys` is asked for that one key rather than filtered afterwards:
-        tmux's own bindings carry whole commands in their body (the `prefix <`
-        menu mentions ` n ` inside it), so searching the full listing for a key
-        name matches the wrong line.
+        The whole table is listed and the line for `key` picked out by its
+        position in `bind-key [-r] -T <table> <key> ...`, not by searching the
+        listing for the key's name: tmux's own bindings carry whole commands in
+        their body (the `prefix <` menu mentions ` n ` inside it), so a plain
+        search matches the wrong line. And the table is listed rather than
+        asked for the one key (`list-keys -T <table> <key>`) because tmux 3.7
+        answers that form with nothing at all, rc 0 (measured on 3.7c; 3.6a
+        prints the line): the three tests here went red on the first CI run,
+        on a runner with 3.7c, while the same bindings listed fine.
         """
-        r = _tmux("list-keys", "-T", table, key)
-        return r.stdout if r.returncode == 0 else ""
+        r = _tmux("list-keys", "-T", table)
+        if r.returncode != 0:
+            return ""
+        pattern = re.compile(r"^bind-key\s+(?:-r\s+)?-T\s+%s\s+%s\s"
+                             % (re.escape(table), re.escape(key)))
+        return "".join(line + "\n" for line in r.stdout.splitlines()
+                       if pattern.match(line))
 
     def test_init_binds_the_keys_and_the_status_bar(self):
         r = self._init()
@@ -795,3 +824,28 @@ class TestInitAndQuitOnAServerOfOurOwn(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheCodeDirectoryWinsOverTheCwd(unittest.TestCase):
+    """Run from a directory holding a `flightdeck/` package, the command still
+    runs ITS code.
+
+    `python3 -m` puts the cwd first on sys.path, ahead of PYTHONPATH, so from a
+    clone of the repository the installed command used to import the clone's
+    package instead of its own: `install.sh` run from a checkout reported the
+    checkout as its code, and `uninstall` then refused to remove links that
+    "do not point at Flightdeck's code". A decoy package whose `config` answers
+    a port nothing else would is what tells the two apart.
+    """
+
+    def test_a_decoy_package_in_the_cwd_is_not_the_one_that_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            decoy = Path(tmp) / "flightdeck"
+            decoy.mkdir()
+            (decoy / "__init__.py").write_text("")
+            (decoy / "config.py").write_text("print('31337')\n")
+            r = _run(["_port"], cwd=tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotEqual(r.stdout.strip(), "31337", r.stdout)
+        self.assertTrue(r.stdout.strip().isdigit(), r.stdout)
+

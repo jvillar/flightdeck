@@ -584,6 +584,23 @@ class TestTheSuiteCannotReachTheRealHome(unittest.TestCase):
                             "%s is outside the sandbox" % path)
 
 
+def _path_with_a_fzf_above_the_floor(tmp):
+    """PATH with a stub `fzf` first, one that reports a version above the floor.
+
+    The run ends with the doctor, and the doctor grades whatever `fzf` the
+    machine has: on a runner whose own is below the floor (Ubuntu 22.04's apt
+    ships 0.29) that is a ✗ and the run exits 1 -- about the runner, not about
+    the install these tests are watching. The stub keeps the verdict about the
+    install; the doctor's own grading of fzf has its own tests.
+    """
+    bindir = Path(tmp) / "fzf-bin"
+    bindir.mkdir()
+    stub = bindir / "fzf"
+    stub.write_text("#!/bin/sh\necho 0.74.4\n")
+    stub.chmod(0o755)
+    return "%s:%s" % (bindir, os.environ.get("PATH", ""))
+
+
 class TestARealRun(unittest.TestCase):
     """The whole command, for real, against a home of its own.
 
@@ -601,6 +618,7 @@ class TestARealRun(unittest.TestCase):
                         "FLIGHTDECK_CONFIG": str(Path(tmp) / "config.json"),
                         "FLIGHTDECK_STATE_DIR": str(Path(tmp) / "state"),
                         "PYTHONPATH": str(code_dir),
+                        "PATH": _path_with_a_fzf_above_the_floor(tmp),
                         # the suite's dead socket: no tmux server is touched
                         "FLIGHTDECK_TMUX_SOCKET": "flightdeck-tests-no-such-socket"})
             (Path(tmp) / "home").mkdir()
@@ -622,6 +640,7 @@ class TestARealRun(unittest.TestCase):
                         "FLIGHTDECK_CONFIG": str(Path(tmp) / "config.json"),
                         "FLIGHTDECK_STATE_DIR": str(Path(tmp) / "state"),
                         "PYTHONPATH": str(code_dir),
+                        "PATH": _path_with_a_fzf_above_the_floor(tmp),
                         "FLIGHTDECK_TMUX_SOCKET": "flightdeck-tests-no-such-socket"})
             (Path(tmp) / "home").mkdir()
             argv = ["python3", "-m", "flightdeck.install", "--yes"]
