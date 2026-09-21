@@ -6,6 +6,8 @@
 
 <p align="center"><b>One screen for every AI coding session you have open.</b></p>
 
+<p align="center"><a href="https://github.com/jvillar/flightdeck/actions/workflows/ci.yml"><img src="https://github.com/jvillar/flightdeck/actions/workflows/ci.yml/badge.svg" alt="CI"></a></p>
+
 ![Flightdeck in use](docs/img/demo.gif)
 
 ## Why Flightdeck
