@@ -355,6 +355,8 @@ never happens; run it again from an ordinary terminal and it finishes the job.
 
 ## The status line
 
+![Flightdeck status line](img/statusline.png)
+
 Flightdeck's status line is **three lines**, each answering one question.
 
 ```

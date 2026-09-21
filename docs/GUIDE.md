@@ -25,6 +25,8 @@ tells Flightdeck (and what it does not) is in [`TOOLS.md`](TOOLS.md).
 
 ## The menu: what you are looking at
 
+![The Flightdeck menu](img/menu.png)
+
 Type `flightdeck` in any terminal and the menu fills the screen. Four kinds of
 row, each in its own colour:
 
