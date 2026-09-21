@@ -10,23 +10,21 @@
 
 ## Why Flightdeck
 
-- 🖥 **A multi-agent terminal.** Claude Code ✳, Codex ⬡ and Antigravity ✦, side by
-  side on one full-screen list, each with its own mark.
-- 📱 **Sessions that persist across devices.** They live in tmux on your machine:
-  close the laptop, open the phone, they are still running.
-- 👤 **Several accounts at once.** Every session shows the account it is spending;
-  your account switcher is one Enter away.
-- 🪟 **Your sessions from several devices at the same time.** Laptop and phone on
-  the same session, each with its own menu.
-- 🔒 **Remote access that survives an account switch.** Change accounts and every
-  session, and your SSH connection to it, stays exactly where it was.
-- 🔁 **Sessions that cycle themselves.** A context gauge on every conversation, a
-  warning at 80 %, and one key that closes the tired one and opens the next,
-  numbered, with the same flags.
-- ⏳ **Know who needs you.** Waiting for you, asking you a question, working,
-  looping: in the row, in the tmux bar, and as a notice when it changes.
-- 🔌 **Nothing else to run.** tmux, fzf and python's standard library; installed
-  through the agents' own hooks, and uninstall gives everything back.
+- 🖥 &nbsp;**A multi-agent terminal.** Claude Code ✳, Codex ⬡ and Antigravity ✦ on one screen.
+
+- 📱 &nbsp;**Sessions that persist across devices.** Close the laptop, open the phone, still running.
+
+- 👤 &nbsp;**Several accounts at once.** See which account every session is spending.
+
+- 🪟 &nbsp;**The same session from several devices at the same time.**
+
+- 🔒 &nbsp;**Remote access that survives an account switch.**
+
+- 🔁 &nbsp;**Sessions that cycle themselves.** A fresh conversation before the old one runs out.
+
+- ⏳ &nbsp;**Know who needs you.** Waiting, asking, working: at a glance, and in the tmux bar.
+
+- 🔌 &nbsp;**Nothing else to run.** tmux, fzf and python. Uninstall gives everything back.
 
 ## Install
 
