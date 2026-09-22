@@ -88,14 +88,21 @@ bind-key    -T root         MouseDown1Pane    select-pane -t = \\; send-keys -M
 """
 
 # The same server after `flightdeck init`. The commands are the real ones the
-# bash command installs, path and all.
+# bash command installs, path and all. The Shift+Enter line is built from raw
+# strings: tmux prints it with escaped backslashes inside double quotes, and a
+# plain triple-quoted string would eat one level of them.
+S_ENTER_LINE = (
+    'bind-key    -T root         S-Enter           '
+    r'if-shell -F "#{||:#{==:#{@flightdeck_agent},claude},'
+    r'#{m/r:^([0-9]+\\.[0-9]+\\.[0-9]+|claude|node)$,#{pane_current_command}}}" '
+    r'"send-keys -l \"\\\\\" ; send-keys Enter" "send-keys S-Enter"'
+)
 OUR_KEYS = """\
 bind-key    -T prefix       c                 new-window
 bind-key    -T prefix       j                 run-shell -b "'/x/bin/flightdeck' goto-menu"
 bind-key    -T prefix       n                 run-shell -b "'/x/bin/flightdeck' _py flightdeck.handover handover '#{pane_id}'"
 bind-key    -T root         F12               if-shell -F '#{m/r:^flightdeck(-[0-9]+)?$,#{session_name}}' 'switch-client -l' 'run-shell -b "\\"/x/bin/flightdeck\\" goto-menu"'
-bind-key    -T root         S-Enter           if-shell -F "#{||:#{==:#{@flightdeck_agent},claude},#{m/r:^([0-9]+\\.[0-9]+\\.[0-9]+|claude|node)$,#{pane_current_command}}}" "send-keys -l \"\\\\\" ; send-keys Enter" "send-keys Enter"
-"""
+""" + S_ENTER_LINE + "\n"
 
 # Somebody else got there first: F12 opens their notes, prefix j is their pane
 # jump, prefix n is a window they renamed.

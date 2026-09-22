@@ -534,7 +534,7 @@ def bindings(list_keys_output):
 
     Read off the whole `tmux list-keys` listing rather than asked key by key,
     because `install` wants the same answer from the same call. `None` is "bound
-    to nothing", which for F12 and `prefix j` is stock tmux.
+    to nothing", which for F12, Shift+Enter and `prefix j` is stock tmux.
     """
     found = {label: None for label, _table, _key in TARGETS}
     for line in (list_keys_output or "").splitlines():
@@ -552,7 +552,7 @@ def key_collisions(list_keys_output):
 
     Not a collision: a key bound to nothing (stock, for F12 and `prefix j`), the
     stock `next-window` on `prefix n`, and anything of ours. Flightdeck
-    overrides all three when you enter the menu, so this is what tells you what
+    overrides all four when you enter the menu, so this is what tells you what
     it is overriding -- `flightdeck install` says it before it happens, and the
     doctor says it afterwards. One function, used by both.
     """
@@ -567,7 +567,7 @@ def key_collisions(list_keys_output):
 
 
 def check_bindings(env):
-    """F12, `prefix j` and `prefix n`, when there is a server to ask.
+    """F12, Shift+Enter, `prefix j` and `prefix n`, when there is a server to ask.
 
     `has-session` FIRST, and it is not a nicety. Measured on tmux 3.6a: with no
     server running, `list-keys` exits 0 and prints tmux's STOCK key table --
@@ -604,7 +604,7 @@ def check_bindings(env):
                      "run `flightdeck` (the menu reapplies them on entry) or "
                      "`flightdeck init`")
     return Check("tmux keys", True,
-                 "F12, prefix j and prefix n are Flightdeck's", None)
+                 "F12, Shift+Enter, prefix j and prefix n are Flightdeck's", None)
 
 
 # ── 13. the pins ─────────────────────────────────────────────────────────────

@@ -492,10 +492,6 @@ class TestCli(unittest.TestCase):
         self.assertIn("usage:", err)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestTheSwitcherHint(unittest.TestCase):
     """`cswap` is the `claude-swap` package, and the hint has to say how to get it.
 
@@ -510,3 +506,6 @@ class TestTheSwitcherHint(unittest.TestCase):
             self.assertIn("pipx install claude-swap", hint, platform)
             self.assertIn("github.com/realiti4/claude-swap", hint, platform)
 
+
+if __name__ == "__main__":
+    unittest.main()

@@ -111,7 +111,7 @@ not for itself:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/jvillar/flightdeck/main/install.sh | sh -s -- --yes
-curl -fsSL https://raw.githubusercontent.com/jvillar/flightdeck/main/install.sh | sh -s -- --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/jvillar/flightdeck/main/install.sh | sh -s -- --version v0.1.1
 ```
 
 **About `--keep-legacy`.** If you are moving from the pre-release cockpit
@@ -224,8 +224,8 @@ next `flightdeck` puts it back. That is why you never have to touch your own
 
 **`flightdeck quit`** turns the cockpit off: the menus are killed and tmux gets its
 own status bar and its own keys back (`prefix + n` is "next window" again; F12,
-Shift+Enter and `prefix + j` are unbound), and if you have a `~/.tmux.conf` of your own it is
-sourced again so your settings come back on top. Your work sessions, their agents
+Shift+Enter and `prefix + j` are unbound), and if you have a `~/.tmux.conf` of
+your own it is sourced again so your settings come back on top. Your work sessions, their agents
 and your pinned sessions keep running, and `flightdeck` turns the cockpit back on
 whenever you want.
 

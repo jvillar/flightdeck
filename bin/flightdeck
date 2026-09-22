@@ -277,17 +277,23 @@ install_tmux() {
   # speaks that protocol nor relays the request, so under tmux's defaults the
   # terminal keeps sending a plain Enter for Shift+Enter. Two lines fix it.
   # `extended-keys on` makes tmux ask the terminal -- xterm's modifyOtherKeys,
-  # which tmux enables on the terminals it recognises: iTerm2, kitty, WezTerm,
-  # Ghostty, foot... -- to report Shift+Enter as a key of its own, and to hand
-  # extended keys only to panes that asked for them, so a shell or vim sees no
-  # change. Then the root binding turns S-Enter into backslash + Enter, Claude
-  # Code's own "new line in any terminal", in a pane running Claude Code
-  # (`$CLAUDE_PANE`); anywhere else Shift+Enter stays Enter. Terminal.app cannot
-  # tell the two keys apart at all: there it is Ctrl+J. Measured on an isolated
-  # server with a fake terminal, on 3.6a and 3.7c, with both forms a terminal
-  # can send (`ESC [ 27;2;13 ~` and `ESC [ 13;2 u`).
+  # which tmux only requests from terminals it knows can answer: on 3.6 that is
+  # iTerm2, XTerm, foot and mintty (3.8 adds WezTerm and Ghostty; kitty never,
+  # it speaks only its own protocol); any other terminal that implements
+  # modifyOtherKeys gets it with `set -as terminal-features ",<TERM>:extkeys"`
+  # in the user's tmux.conf -- to report Shift+Enter as a key of its own, and
+  # to hand extended keys only to panes that asked for them: a shell sees no
+  # change, and a pane that does ask (nvim, emacs) gets the extended form it
+  # asked for. Then the root binding turns S-Enter into backslash + Enter,
+  # Claude Code's own "new line in any terminal", in a pane running Claude Code
+  # (`$CLAUDE_PANE`). Anywhere else the key is passed on AS IT CAME (`S-Enter`,
+  # not `Enter`): a pane that cannot tell the two apart gets the same `\r` it
+  # always got, and one that asked for extended keys keeps the real key.
+  # Terminal.app cannot tell the two keys apart at all: there it is Ctrl+J.
+  # Measured on an isolated server with a fake terminal, on 3.6a and 3.7c, with
+  # both forms a terminal can send (`ESC [ 27;2;13 ~` and `ESC [ 13;2 u`).
   "${TMUXC[@]}" set -s extended-keys on
-  "${TMUXC[@]}" bind-key -n S-Enter if -F "$CLAUDE_PANE" 'send-keys -l "\\" ; send-keys Enter' 'send-keys Enter'
+  "${TMUXC[@]}" bind-key -n S-Enter if -F "$CLAUDE_PANE" 'send-keys -l "\\" ; send-keys Enter' 'send-keys S-Enter'
   # F12 = the menu<->session TOGGLE (inside the menu it goes back to the last
   # session). "I am in a menu" = `flightdeck` or one of the per-window
   # `flightdeck-N`: F12 bounces from both. prefix+j is NOT the same key: it is
@@ -300,7 +306,7 @@ install_tmux() {
 }
 
 # Everything "turn the cockpit off" means on the tmux side, shared word for word
-# by `quit` and by `uninstall`: the options back to stock, our three keys undone,
+# by `quit` and by `uninstall`: the options back to stock, our four keys undone,
 # the refresh hook unset and the menus killed. The WORK sessions -- and the pins,
 # which are the user's own commands and not our infrastructure -- are never
 # touched.

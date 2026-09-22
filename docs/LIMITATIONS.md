@@ -27,12 +27,16 @@ next time you enter with `flightdeck`.
 
 **Shift+Enter goes to Flightdeck first.** In a pane running Claude Code it becomes
 the backslash + Enter that Claude Code takes as a new line; in any other pane it
-is passed on as Enter, which is what it always was under tmux. To make the
-terminal report the key at all, Flightdeck also sets tmux's `extended-keys`
-option to `on`: tmux then hands modified keys in their extended form to programs
-that ask for them, and to nobody else. If a program of yours behaves differently
-with that option, `tmux set -s extended-keys off` puts it back until the next
-time you enter the menu.
+is passed on as it came. Flightdeck tells Claude Code from the pane's process
+name, and where Claude Code runs under npm that name is `node` — so another
+`node` of yours in a pane (a REPL, a watcher) gets that backslash too. If it
+bothers you, `tmux unbind -n S-Enter`, and the binding comes back the next time
+you enter with `flightdeck`. To make the terminal report the key at all,
+Flightdeck also sets tmux's `extended-keys` option to `on`: tmux then hands
+modified keys in their extended form to programs that ask for them, and to
+nobody else. If a program of yours behaves differently with that option,
+`tmux set -s extended-keys off` puts it back until the next time you enter the
+menu.
 
 `flightdeck quit` gives tmux all four back, along with its own status bar and its
 `extended-keys` default, and leaves your work sessions running.

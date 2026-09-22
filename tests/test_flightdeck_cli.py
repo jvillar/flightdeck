@@ -20,6 +20,7 @@ import os
 import time
 import sys
 import select
+import signal
 import pty
 import re
 import shutil
@@ -827,7 +828,7 @@ class TestInitAndQuitOnAServerOfOurOwn(unittest.TestCase):
     def test_doctor_reads_our_keys_off_a_real_server(self):
         """The doctor's own fixtures are hand-written; this is tmux's real output.
 
-        `init` binds the three keys here, and the doctor reads them back through
+        `init` binds the four keys here, and the doctor reads them back through
         `list-keys`. If tmux ever changed how it prints a binding, every
         collision test in `test_doctor.py` would go on passing and this would
         not.
@@ -870,10 +871,6 @@ class TestTheCodeDirectoryWinsOverTheCwd(unittest.TestCase):
         self.assertTrue(r.stdout.strip().isdigit(), r.stdout)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 def _process_called(name, tmp):
     """An executable whose PROCESS NAME is `name`, or None when this machine
     cannot make one. It copies its stdin to its stdout, like `cat`.
@@ -899,6 +896,7 @@ def _process_called(name, tmp):
     return str(exe) if done.returncode == 0 else None
 
 
+@unittest.skipUnless(shutil.which("tmux"), "tmux is not installed")
 class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
     """Shift+Enter, from a terminal to the pane, through `-L fdtest`.
 
@@ -910,6 +908,12 @@ class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
     in any other pane as a plain newline, because there Shift+Enter is Enter.
     The pane runs a `cat`, in cooked mode, so what it wrote is what the tty
     line discipline delivered: `\\\n` or `\n`.
+
+    The fake terminal types the sequence unasked. A real one only sends it once
+    tmux has asked for extended keys, which is what `extended-keys on` is for
+    (`test_init_binds_shift_enter_and_turns_extended_keys_on` pins the option);
+    tmux's parser takes the sequence either way, so this test would pass with
+    the option off. The two are one fix, tested in two places.
     """
 
     def setUp(self):
@@ -931,8 +935,11 @@ class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         pid, fd = pty.fork()
         if pid == 0:                                   # the fake terminal
-            os.environ["TERM"] = "xterm-256color"
-            os.execvp("tmux", ["tmux", "-L", SOCKET, "attach"])
+            try:
+                os.environ["TERM"] = "xterm-256color"
+                os.execvp("tmux", ["tmux", "-L", SOCKET, "attach"])
+            except BaseException:                      # never fall back into unittest
+                os._exit(1)
         try:
             deadline = time.time() + 1.5               # let tmux draw first
             while time.time() < deadline:
@@ -951,11 +958,21 @@ class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
                         break
         finally:
             _tmux("kill-server")
-            try:
-                os.waitpid(pid, 0)
-            except OSError:
-                pass
-            os.close(fd)
+            os.close(fd)             # the hangup is what makes the client leave
+            deadline = time.time() + 2.0
+            while time.time() < deadline:
+                try:
+                    if os.waitpid(pid, os.WNOHANG)[0]:
+                        break
+                except OSError:
+                    break
+                time.sleep(0.05)
+            else:                    # never a hang: a test that fails can be read
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                    os.waitpid(pid, 0)
+                except OSError:
+                    pass
         return out.read_bytes() if out.exists() else b""
 
     def test_in_a_claude_code_pane_it_is_a_new_line(self):
@@ -969,3 +986,6 @@ class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
         got = self._typed_into("cat")
         self.assertEqual(got, b"\n")
 
+
+if __name__ == "__main__":
+    unittest.main()

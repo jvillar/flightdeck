@@ -15,6 +15,7 @@ tells Flightdeck (and what it does not) is in [`TOOLS.md`](TOOLS.md).
   - [Enter or Ctrl-F on a grey row: carry on, or consult](#enter-or-ctrl-f-on-a-grey-row-carry-on-or-consult)
   - [Ctrl-L: launch a grey row your way](#ctrl-l-launch-a-grey-row-your-way)
   - [Ctrl-N: a new, empty session](#ctrl-n-a-new-empty-session)
+  - [Shift+Enter inside tmux](#shiftenter-inside-tmux)
   - [F12 and `prefix + j` are not the same key](#f12-and-prefix--j-are-not-the-same-key)
 - [A day of work](#a-day-of-work)
 - [The context gauge: how much room a conversation has left](#the-context-gauge-how-much-room-a-conversation-has-left)
@@ -190,15 +191,24 @@ On its own, Claude Code under tmux **sends the prompt** when you press Shift+Ent
 instead of adding a line. Claude Code tells the two keys apart with a keyboard
 protocol it asks the terminal for, and tmux neither speaks it nor passes the
 request on, so the terminal keeps sending a plain Enter. Flightdeck fixes it
-when you enter the menu: it asks tmux to report Shift+Enter as a key of its own
-(tmux does this with the terminals it recognises: iTerm2, kitty, WezTerm, Ghostty,
-foot) and binds that key, in a pane running Claude Code, to the backslash + Enter
-that Claude Code takes as a new line in any terminal. A shell or an editor in
-another pane sees Enter, as before.
+when you enter the menu: it asks tmux to have the terminal report Shift+Enter as
+a key of its own, and binds that key, in a pane running Claude Code, to the
+backslash + Enter that Claude Code takes as a new line in any terminal. Every
+other pane gets the key exactly as it came, so a shell sees Enter, as before.
 
-Terminal.app cannot tell Shift+Enter from Enter at all, whatever sits behind it:
-there, **Ctrl+J** adds a line. Ctrl+J works everywhere, in fact, and so does a
-backslash followed by Enter.
+tmux only asks terminals it knows can answer. On tmux 3.6 that is iTerm2, XTerm,
+foot and mintty; tmux 3.8 adds WezTerm and Ghostty. For any other terminal that
+speaks xterm's modifyOtherKeys, tell tmux so once, with
+`set -as terminal-features ",<your TERM>:extkeys"` in your `tmux.conf`. kitty
+speaks only its own protocol, which tmux does not relay. Terminal.app cannot tell
+Shift+Enter from Enter at all, whatever you do. Where the key cannot arrive,
+**Ctrl+J** adds a line; it works everywhere, and so does a backslash followed by
+Enter.
+
+Flightdeck decides "this pane is Claude Code" from the pane's process name: the
+version number on macOS, `claude`, or `node` where Claude Code runs under npm.
+If yours runs under some other name (a wrapper script, say), mark its pane once
+with `tmux set -p @flightdeck_agent claude`.
 
 **Why Ctrl-N and not Enter to create.** Enter *never* creates anything new. It
 is a lesson learnt the hard way: with creation on Enter, the fuzzy search ended

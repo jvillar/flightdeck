@@ -15,12 +15,14 @@ with no section here does not get released.
 - **Shift+Enter in Claude Code inside tmux sent the prompt** instead of adding a
   line. Claude Code tells the two keys apart with a keyboard protocol it asks the
   terminal for, and tmux neither speaks it nor passes the request on. Entering
-  the menu now sets tmux's `extended-keys` on, so the terminals tmux recognises
-  (iTerm2, kitty, WezTerm, Ghostty, foot) report Shift+Enter as its own key, and
-  binds it, in a pane running Claude Code, to the backslash + Enter that Claude
-  Code takes as a new line anywhere. Other panes still get Enter; `quit` and
-  `uninstall` undo both. Terminal.app cannot tell the keys apart: there it is
-  Ctrl+J, which works everywhere.
+  the menu now sets tmux's `extended-keys` on, so the terminals tmux knows can
+  answer (iTerm2, XTerm, foot and mintty on tmux 3.6; WezTerm and Ghostty from
+  3.8; any other with one `terminal-features` line, see the guide) report
+  Shift+Enter as its own key, and binds it, in a pane running Claude Code, to
+  the backslash + Enter that Claude Code takes as a new line anywhere. Other
+  panes get the key as it came; `quit` and `uninstall` undo both. kitty and
+  Terminal.app cannot deliver the key through tmux: there it is Ctrl+J, which
+  works everywhere.
 
 ### Added
 
