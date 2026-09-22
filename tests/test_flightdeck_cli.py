@@ -873,25 +873,28 @@ class TestTheCodeDirectoryWinsOverTheCwd(unittest.TestCase):
 
 def _process_called(name, tmp):
     """An executable whose PROCESS NAME is `name`, or None when this machine
-    cannot make one. It copies its stdin to its stdout, like `cat`.
+    cannot make one. It copies its stdin into the file named by its first
+    argument, like `cat > file` -- but without a shell in between.
 
-    tmux's `#{pane_current_command}` is the process name the kernel keeps: on
-    Linux the last component of the path given to exec, so a symlink to `cat`
-    is enough; on macOS the executable's own name, so it has to be a real file,
-    and a copy of `/bin/cat` will not run (its signature) -- a two-line C
-    program compiled on the spot does, when there is a compiler.
+    tmux's `#{pane_current_command}` is the process name the kernel keeps, and
+    the pane's command runs through the user's shell: `sh -c "cat > file"` may
+    leave the SHELL in front (bash does not exec a command that carries a
+    redirection), and then the pane's process is `bash`, not the name under
+    test. A simple command with no redirection is exec'd by every shell, so the
+    program takes the file as an argument. On macOS the name is the
+    executable's own (a symlink will not do, and a copy of `/bin/cat` will not
+    run: its signature), so it is a five-line C program compiled on the spot;
+    the same on Linux, where the runners have a compiler too.
     """
-    exe = Path(tmp) / name
-    cat = shutil.which("cat")
-    if sys.platform != "darwin" and cat:
-        os.symlink(cat, str(exe))
-        return str(exe)
     cc = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")
     if not cc:
         return None
     src = Path(tmp) / "catlike.c"
-    src.write_text("#include <unistd.h>\nint main(void){char b[64];int n;"
-                   "while((n=read(0,b,64))>0)write(1,b,n);return 0;}\n")
+    src.write_text("#include <fcntl.h>\n#include <unistd.h>\n"
+                   "int main(int c,char**v){char b[64];int n;"
+                   "int f=open(v[1],O_WRONLY|O_CREAT|O_TRUNC,0644);"
+                   "while((n=read(0,b,64))>0)write(f,b,n);return 0;}\n")
+    exe = Path(tmp) / name
     done = subprocess.run([cc, "-o", str(exe), str(src)], capture_output=True)
     return str(exe) if done.returncode == 0 else None
 
@@ -906,7 +909,7 @@ class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
     (`2.1.278` on macOS: the binary's own name) that has to arrive as a
     backslash and a newline -- Claude Code's "new line in any terminal" -- and
     in any other pane as a plain newline, because there Shift+Enter is Enter.
-    The pane runs a `cat`, in cooked mode, so what it wrote is what the tty
+    The pane runs a `cat`-alike in cooked mode, so what it wrote is what the tty
     line discipline delivered: `\\\n` or `\n`.
 
     The fake terminal types the sequence unasked. A real one only sends it once
@@ -924,15 +927,18 @@ class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
         _tmux("kill-server")
         shutil.rmtree(self.tmp, True)
 
-    def _typed_into(self, command):
-        """Start the server with `command` in its pane, run `init`, attach a
-        fake terminal, type Shift+Enter, and answer what the pane received."""
+    def _typed_into(self, exe):
+        """Start the server with `exe` in its pane, run `init`, attach a fake
+        terminal, type Shift+Enter. -> (what the pane received, a diagnosis)."""
         out = Path(self.tmp) / "received.txt"
         r = _tmux("new-session", "-d", "-x", "80", "-y", "24",
-                  "%s > '%s'" % (command, out))
+                  "'%s' '%s'" % (exe, out))
         self.assertEqual(r.returncode, 0, r.stderr)
         r = _run(["init"], FLIGHTDECK_TMUX_SOCKET=SOCKET)
         self.assertEqual(r.returncode, 0, r.stderr)
+        running = _tmux("display-message", "-p", "#{pane_current_command}").stdout
+        bound = self._binding()
+        seen = b""
         pid, fd = pty.fork()
         if pid == 0:                                   # the fake terminal
             try:
@@ -940,29 +946,19 @@ class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
                 os.execvp("tmux", ["tmux", "-L", SOCKET, "attach"])
             except BaseException:                      # never fall back into unittest
                 os._exit(1)
+        status = None
         try:
-            deadline = time.time() + 1.5               # let tmux draw first
-            while time.time() < deadline:
-                if select.select([fd], [], [], 0.05)[0]:
-                    try:
-                        os.read(fd, 4096)
-                    except OSError:
-                        break
+            seen += self._drain(fd, 1.5)               # let tmux draw first
             os.write(fd, b"\x1b[27;2;13~")
-            deadline = time.time() + 1.0
-            while time.time() < deadline:
-                if select.select([fd], [], [], 0.05)[0]:
-                    try:
-                        os.read(fd, 4096)
-                    except OSError:
-                        break
+            seen += self._drain(fd, 1.0)
         finally:
             _tmux("kill-server")
             os.close(fd)             # the hangup is what makes the client leave
             deadline = time.time() + 2.0
             while time.time() < deadline:
                 try:
-                    if os.waitpid(pid, os.WNOHANG)[0]:
+                    done, status = os.waitpid(pid, os.WNOHANG)
+                    if done:
                         break
                 except OSError:
                     break
@@ -973,18 +969,43 @@ class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
                     os.waitpid(pid, 0)
                 except OSError:
                     pass
-        return out.read_bytes() if out.exists() else b""
+        got = out.read_bytes() if out.exists() else None
+        diagnosis = ("pane_current_command=%r binding=%r client_status=%r "
+                     "terminal_saw=%r" % (running.strip(), bound.strip(), status,
+                                          seen[:400]))
+        return got, diagnosis
+
+    @staticmethod
+    def _drain(fd, seconds):
+        got = b""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            if select.select([fd], [], [], 0.05)[0]:
+                try:
+                    got += os.read(fd, 4096)
+                except OSError:
+                    break
+        return got
+
+    @staticmethod
+    def _binding():
+        r = _tmux("list-keys", "-T", "root")
+        return "".join(line + "\n" for line in r.stdout.splitlines()
+                       if re.match(r"^bind-key\s+(?:-r\s+)?-T\s+root\s+S-Enter\s", line))
 
     def test_in_a_claude_code_pane_it_is_a_new_line(self):
         exe = _process_called("2.1.278", self.tmp)
         if exe is None:
-            self.skipTest("no way to make a process called 2.1.278 here")
-        got = self._typed_into("'%s'" % exe)
-        self.assertEqual(got, b"\\\n")
+            self.skipTest("no compiler to make a process called 2.1.278 with")
+        got, why = self._typed_into(exe)
+        self.assertEqual(got, b"\\\n", why)
 
     def test_anywhere_else_it_is_enter(self):
-        got = self._typed_into("cat")
-        self.assertEqual(got, b"\n")
+        exe = _process_called("catlike", self.tmp)
+        if exe is None:
+            self.skipTest("no compiler to make the pane's program with")
+        got, why = self._typed_into(exe)
+        self.assertEqual(got, b"\n", why)
 
 
 if __name__ == "__main__":
