@@ -194,7 +194,7 @@ request on, so the terminal keeps sending a plain Enter. Flightdeck fixes it
 when you enter the menu: it asks tmux to have the terminal report Shift+Enter as
 a key of its own, and binds that key, in a pane running Claude Code, to the
 backslash + Enter that Claude Code takes as a new line in any terminal. Every
-other pane gets the key exactly as it came, so a shell sees Enter, as before.
+other pane gets Enter, as before.
 
 tmux only asks terminals it knows can answer. On tmux 3.6 that is iTerm2, XTerm,
 foot and mintty; tmux 3.8 adds WezTerm and Ghostty. For any other terminal that

@@ -27,7 +27,8 @@ next time you enter with `flightdeck`.
 
 **Shift+Enter goes to Flightdeck first.** In a pane running Claude Code it becomes
 the backslash + Enter that Claude Code takes as a new line; in any other pane it
-is passed on as it came. Flightdeck tells Claude Code from the pane's process
+is Enter, which is what it always was under tmux. Flightdeck tells Claude Code
+from the pane's process
 name, and where Claude Code runs under npm that name is `node` — so another
 `node` of yours in a pane (a REPL, a watcher) gets that backslash too. If it
 bothers you, `tmux unbind -n S-Enter`, and the binding comes back the next time

@@ -95,7 +95,7 @@ S_ENTER_LINE = (
     'bind-key    -T root         S-Enter           '
     r'if-shell -F "#{||:#{==:#{@flightdeck_agent},claude},'
     r'#{m/r:^([0-9]+\\.[0-9]+\\.[0-9]+|claude|node)$,#{pane_current_command}}}" '
-    r'"send-keys -l \"\\\\\" ; send-keys Enter" "send-keys S-Enter"'
+    r'"send-keys -l \"\\\\\" ; send-keys Enter" "send-keys Enter"'
 )
 OUR_KEYS = """\
 bind-key    -T prefix       c                 new-window

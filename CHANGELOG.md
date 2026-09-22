@@ -20,7 +20,7 @@ with no section here does not get released.
   3.8; any other with one `terminal-features` line, see the guide) report
   Shift+Enter as its own key, and binds it, in a pane running Claude Code, to
   the backslash + Enter that Claude Code takes as a new line anywhere. Other
-  panes get the key as it came; `quit` and `uninstall` undo both. kitty and
+  panes still get Enter; `quit` and `uninstall` undo both. kitty and
   Terminal.app cannot deliver the key through tmux: there it is Ctrl+J, which
   works everywhere.
 
