@@ -179,6 +179,12 @@ CMD_Q="\\\"$CMD\\\""
 TO_MENU="run-shell -b \"$CMD_Q goto-menu\""
 REFRESH_ONE="run-shell -b \"$CMD_Q refresh-menu #{session_name}\""
 
+# The pane where Shift+Enter means "a new line": one running Claude Code. Its
+# process is the version number on macOS (`2.1.278` is the binary's own name),
+# `claude` or `node` elsewhere; a pane marked `@flightdeck_agent claude` counts
+# as well, whatever its process is called.
+CLAUDE_PANE='#{||:#{==:#{@flightdeck_agent},claude},#{m/r:^([0-9]+\.[0-9]+\.[0-9]+|claude|node)$,#{pane_current_command}}}'
+
 # The `flightdeck` session ready to use: created if it was not there, and with
 # the picker running if the pane had fallen to a shell (which is what Esc
 # leaves). Without this, F12 took you to a mute pane or nowhere at all.
@@ -265,6 +271,23 @@ install_tmux() {
   # cockpit hides the window list (one window per session), so jumping windows
   # went nowhere.
   "${TMUXC[@]}" bind-key -T prefix n run-shell -b "$PY flightdeck.handover handover '#{pane_id}'"
+  # Shift+Enter inside Claude Code = a new line, not the prompt going off.
+  # Claude Code tells Shift+Enter from Enter with the kitty keyboard protocol,
+  # which it asks the terminal for; tmux (measured on 3.6a and 3.7c) neither
+  # speaks that protocol nor relays the request, so under tmux's defaults the
+  # terminal keeps sending a plain Enter for Shift+Enter. Two lines fix it.
+  # `extended-keys on` makes tmux ask the terminal -- xterm's modifyOtherKeys,
+  # which tmux enables on the terminals it recognises: iTerm2, kitty, WezTerm,
+  # Ghostty, foot... -- to report Shift+Enter as a key of its own, and to hand
+  # extended keys only to panes that asked for them, so a shell or vim sees no
+  # change. Then the root binding turns S-Enter into backslash + Enter, Claude
+  # Code's own "new line in any terminal", in a pane running Claude Code
+  # (`$CLAUDE_PANE`); anywhere else Shift+Enter stays Enter. Terminal.app cannot
+  # tell the two keys apart at all: there it is Ctrl+J. Measured on an isolated
+  # server with a fake terminal, on 3.6a and 3.7c, with both forms a terminal
+  # can send (`ESC [ 27;2;13 ~` and `ESC [ 13;2 u`).
+  "${TMUXC[@]}" set -s extended-keys on
+  "${TMUXC[@]}" bind-key -n S-Enter if -F "$CLAUDE_PANE" 'send-keys -l "\\" ; send-keys Enter' 'send-keys Enter'
   # F12 = the menu<->session TOGGLE (inside the menu it goes back to the last
   # session). "I am in a menu" = `flightdeck` or one of the per-window
   # `flightdeck-N`: F12 bounces from both. prefix+j is NOT the same key: it is
@@ -298,6 +321,8 @@ stock_tmux() {
     done
     "${TMUXC[@]}" unbind-key -T prefix j 2>/dev/null
     "${TMUXC[@]}" unbind-key -n F12 2>/dev/null
+    "${TMUXC[@]}" unbind-key -n S-Enter 2>/dev/null
+    "${TMUXC[@]}" set -su extended-keys
     "${TMUXC[@]}" bind-key -T prefix n next-window   # the stock one
     "${TMUXC[@]}" set-hook -gu client-session-changed
     # `set -gu` gives back tmux's FACTORY value, not the user's: a status bar

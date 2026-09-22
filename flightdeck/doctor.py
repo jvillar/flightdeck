@@ -70,18 +70,20 @@ PYTHON_MIN = (3, 9)
 INT_KEYS = ("menu_port", "notice_ms", "context_warn_pct", "context_rearm_pct",
             "context_show_pct", "history_limit")
 
-# The three keys Flightdeck binds, as `tmux list-keys` spells them: the table,
+# The four keys Flightdeck binds, as `tmux list-keys` spells them: the table,
 # the key, and the label a person reads.
 TARGETS = (("F12", "root", "F12"),
+           ("Shift+Enter", "root", "S-Enter"),
            ("prefix j", "prefix", "j"),
            ("prefix n", "prefix", "n"))
 
-# What tmux itself binds them to. `n` is next-window; `j` and F12 are bound to
-# nothing at all, so their absence is stock and not a collision.
+# What tmux itself binds them to. `n` is next-window; `j`, F12 and Shift+Enter
+# are bound to nothing at all, so their absence is stock and not a collision.
 STOCK_BINDINGS = {"prefix n": "next-window"}
 
-# A binding is OURS when its command mentions us: `goto-menu` and
-# `flightdeck.handover` both travel with the word in them.
+# A binding is OURS when its command mentions us: `goto-menu`,
+# `flightdeck.handover` and the `@flightdeck_agent` of Shift+Enter all travel
+# with the word in them.
 OURS_MARK = "flightdeck"
 
 # `bind-key [-r] -T <table> <key> <command...>`, padded with spaces. Measured
@@ -528,7 +530,7 @@ def check_agy_status_line(env):
 # ── 12. the tmux keys ────────────────────────────────────────────────────────
 
 def bindings(list_keys_output):
-    """What Flightdeck's three keys are bound to right now. -> {label: command|None}
+    """What Flightdeck's four keys are bound to right now. -> {label: command|None}
 
     Read off the whole `tmux list-keys` listing rather than asked key by key,
     because `install` wants the same answer from the same call. `None` is "bound

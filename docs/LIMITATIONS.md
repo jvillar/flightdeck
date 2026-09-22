@@ -9,7 +9,7 @@ Limits that belong to one particular tool — Codex and Antigravity have no "ask
 you" or "looping" state, Antigravity's grey rows have no titles, and so on — are
 in [`TOOLS.md`](TOOLS.md), one section per tool.
 
-## Three keys stop doing what they used to
+## Four keys stop doing what they used to
 
 **F12 no longer reaches the programs inside tmux.** That is the price of the key
 working even while an agent is busy: tmux intercepts it first. If something you
@@ -25,8 +25,17 @@ next time you enter with `flightdeck`.
 
 **`prefix + j` is taken too**, for the one-way trip to the menu.
 
-`flightdeck quit` gives tmux all three back, along with its own status bar, and
-leaves your work sessions running.
+**Shift+Enter goes to Flightdeck first.** In a pane running Claude Code it becomes
+the backslash + Enter that Claude Code takes as a new line; in any other pane it
+is passed on as Enter, which is what it always was under tmux. To make the
+terminal report the key at all, Flightdeck also sets tmux's `extended-keys`
+option to `on`: tmux then hands modified keys in their extended form to programs
+that ask for them, and to nobody else. If a program of yours behaves differently
+with that option, `tmux set -s extended-keys off` puts it back until the next
+time you enter the menu.
+
+`flightdeck quit` gives tmux all four back, along with its own status bar and its
+`extended-keys` default, and leaves your work sessions running.
 
 ## Notices live inside tmux, and nowhere else
 

@@ -8,6 +8,27 @@ The heading of a released version carries its date. `release.yml` reads the
 section for the tag it is building and makes it the release notes, so a version
 with no section here does not get released.
 
+## v0.1.1 — 2026-09-22
+
+### Fixed
+
+- **Shift+Enter in Claude Code inside tmux sent the prompt** instead of adding a
+  line. Claude Code tells the two keys apart with a keyboard protocol it asks the
+  terminal for, and tmux neither speaks it nor passes the request on. Entering
+  the menu now sets tmux's `extended-keys` on, so the terminals tmux recognises
+  (iTerm2, kitty, WezTerm, Ghostty, foot) report Shift+Enter as its own key, and
+  binds it, in a pane running Claude Code, to the backslash + Enter that Claude
+  Code takes as a new line anywhere. Other panes still get Enter; `quit` and
+  `uninstall` undo both. Terminal.app cannot tell the keys apart: there it is
+  Ctrl+J, which works everywhere.
+
+### Added
+
+- **`flightdeck install` says how to get the account switcher** when `cswap` is
+  not on the machine: it is the `claude-swap` package, and the hint the doctor
+  gives for a pinned-but-missing `cswap` now says so too, instead of calling it a
+  personal tool.
+
 ## v0.1.0 — 2026-09-22
 
 The first release.

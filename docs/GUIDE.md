@@ -178,10 +178,27 @@ now belongs to the strip.
 | **prefix + j** | **one way to the menu**, from any session (creating or reviving it exactly as F12 does) |
 | **prefix + n** | **the handover**: close the agent in this pane and open a fresh one in its place, with the title numbered up (`pricing 2` → `pricing 3`) |
 | **prefix + d** | *detach*: let go of tmux and go back to your own shell. Everything carries on running |
+| **Shift+Enter** | in a pane running Claude Code, a **new line** in what you are typing instead of sending it. In any other pane it is Enter. See [Shift+Enter inside tmux](#shiftenter-inside-tmux) |
 
 `prefix` is tmux's own leading key, **`Ctrl-b` out of the box** (many people
 remap it to `Ctrl-a`; Flightdeck works with whichever you have). So `prefix + n`
 means: press `Ctrl-b`, let go, then press `n`.
+
+### Shift+Enter inside tmux
+
+On its own, Claude Code under tmux **sends the prompt** when you press Shift+Enter
+instead of adding a line. Claude Code tells the two keys apart with a keyboard
+protocol it asks the terminal for, and tmux neither speaks it nor passes the
+request on, so the terminal keeps sending a plain Enter. Flightdeck fixes it
+when you enter the menu: it asks tmux to report Shift+Enter as a key of its own
+(tmux does this with the terminals it recognises: iTerm2, kitty, WezTerm, Ghostty,
+foot) and binds that key, in a pane running Claude Code, to the backslash + Enter
+that Claude Code takes as a new line in any terminal. A shell or an editor in
+another pane sees Enter, as before.
+
+Terminal.app cannot tell Shift+Enter from Enter at all, whatever sits behind it:
+there, **Ctrl+J** adds a line. Ctrl+J works everywhere, in fact, and so does a
+backslash followed by Enter.
 
 **Why Ctrl-N and not Enter to create.** Enter *never* creates anything new. It
 is a lesson learnt the hard way: with creation on Enter, the fuzzy search ended

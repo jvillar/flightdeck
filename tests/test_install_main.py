@@ -209,6 +209,29 @@ class TestTheOrder(unittest.TestCase):
         self.assertIn(("claude", "install"), [(t, w) for t, w, _a, _k in calls])
 
 
+class TestTheSwitcherHint(unittest.TestCase):
+    """`cswap` missing: say how to get it. Present: nothing to say.
+
+    The ⚙ accounts row is the one preset a fresh machine lacks and the one
+    people look for after reading about accounts; the first colleague to try
+    Flightdeck found neither the row nor a word about it.
+    """
+
+    def test_a_machine_without_cswap_is_told_how_to_install_it(self):
+        with orchestrator([]):
+            _code, out, _err = run_main(["--yes"], which=which_finding(),
+                                        run=tmux_answering(returncode=1))
+        self.assertIn("cswap", out)
+        self.assertIn("claude-swap", out)
+        self.assertIn("flightdeck pin add cswap", out)
+
+    def test_a_machine_with_cswap_hears_nothing_about_it(self):
+        with orchestrator([]):
+            _code, out, _err = run_main(["--yes"], which=which_finding("cswap"),
+                                        run=tmux_answering(returncode=1))
+        self.assertNotIn("claude-swap", out)
+
+
 class TestTheStatusLineQuestion(unittest.TestCase):
 
     def _run(self, calls, ask, isatty=True, **kwargs):

@@ -17,6 +17,10 @@ menu, which a test has no business doing.
 import atexit
 import json
 import os
+import time
+import sys
+import select
+import pty
 import re
 import shutil
 import subprocess
@@ -642,6 +646,19 @@ class TestInitAndQuitOnAServerOfOurOwn(unittest.TestCase):
                              % (re.escape(table), re.escape(key)))
         return "".join(line + "\n" for line in lines if pattern.match(line))
 
+    def test_init_binds_shift_enter_and_turns_extended_keys_on(self):
+        self._init()
+        bound = self._key("root", "S-Enter")
+        self.assertIn("send-keys", bound)
+        self.assertIn("@flightdeck_agent", bound)   # the mark the doctor reads
+        self.assertEqual(_tmux("show", "-sv", "extended-keys").stdout.strip(), "on")
+
+    def test_quit_takes_shift_enter_and_extended_keys_back(self):
+        self._init()
+        _run(["quit"], FLIGHTDECK_TMUX_SOCKET=SOCKET)
+        self.assertEqual(self._key("root", "S-Enter"), "")
+        self.assertEqual(_tmux("show", "-sv", "extended-keys").stdout.strip(), "off")
+
     def test_init_binds_the_keys_and_the_status_bar(self):
         r = self._init()
         self.assertIn("flightdeck: tmux configured", r.stdout)
@@ -855,3 +872,100 @@ class TestTheCodeDirectoryWinsOverTheCwd(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _process_called(name, tmp):
+    """An executable whose PROCESS NAME is `name`, or None when this machine
+    cannot make one. It copies its stdin to its stdout, like `cat`.
+
+    tmux's `#{pane_current_command}` is the process name the kernel keeps: on
+    Linux the last component of the path given to exec, so a symlink to `cat`
+    is enough; on macOS the executable's own name, so it has to be a real file,
+    and a copy of `/bin/cat` will not run (its signature) -- a two-line C
+    program compiled on the spot does, when there is a compiler.
+    """
+    exe = Path(tmp) / name
+    cat = shutil.which("cat")
+    if sys.platform != "darwin" and cat:
+        os.symlink(cat, str(exe))
+        return str(exe)
+    cc = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")
+    if not cc:
+        return None
+    src = Path(tmp) / "catlike.c"
+    src.write_text("#include <unistd.h>\nint main(void){char b[64];int n;"
+                   "while((n=read(0,b,64))>0)write(1,b,n);return 0;}\n")
+    done = subprocess.run([cc, "-o", str(exe), str(src)], capture_output=True)
+    return str(exe) if done.returncode == 0 else None
+
+
+class TestShiftEnterOnAServerOfOurOwn(unittest.TestCase):
+    """Shift+Enter, from a terminal to the pane, through `-L fdtest`.
+
+    A fake terminal on a pty attaches to the server and types Shift+Enter the
+    way a terminal with extended keys does (`ESC [ 27;2;13 ~`, xterm's
+    modifyOtherKeys form). In a pane whose process is called like Claude Code's
+    (`2.1.278` on macOS: the binary's own name) that has to arrive as a
+    backslash and a newline -- Claude Code's "new line in any terminal" -- and
+    in any other pane as a plain newline, because there Shift+Enter is Enter.
+    The pane runs a `cat`, in cooked mode, so what it wrote is what the tty
+    line discipline delivered: `\\\n` or `\n`.
+    """
+
+    def setUp(self):
+        _tmux("kill-server")
+        self.tmp = tempfile.mkdtemp(prefix="flightdeck-shift-enter-")
+
+    def tearDown(self):
+        _tmux("kill-server")
+        shutil.rmtree(self.tmp, True)
+
+    def _typed_into(self, command):
+        """Start the server with `command` in its pane, run `init`, attach a
+        fake terminal, type Shift+Enter, and answer what the pane received."""
+        out = Path(self.tmp) / "received.txt"
+        r = _tmux("new-session", "-d", "-x", "80", "-y", "24",
+                  "%s > '%s'" % (command, out))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = _run(["init"], FLIGHTDECK_TMUX_SOCKET=SOCKET)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        pid, fd = pty.fork()
+        if pid == 0:                                   # the fake terminal
+            os.environ["TERM"] = "xterm-256color"
+            os.execvp("tmux", ["tmux", "-L", SOCKET, "attach"])
+        try:
+            deadline = time.time() + 1.5               # let tmux draw first
+            while time.time() < deadline:
+                if select.select([fd], [], [], 0.05)[0]:
+                    try:
+                        os.read(fd, 4096)
+                    except OSError:
+                        break
+            os.write(fd, b"\x1b[27;2;13~")
+            deadline = time.time() + 1.0
+            while time.time() < deadline:
+                if select.select([fd], [], [], 0.05)[0]:
+                    try:
+                        os.read(fd, 4096)
+                    except OSError:
+                        break
+        finally:
+            _tmux("kill-server")
+            try:
+                os.waitpid(pid, 0)
+            except OSError:
+                pass
+            os.close(fd)
+        return out.read_bytes() if out.exists() else b""
+
+    def test_in_a_claude_code_pane_it_is_a_new_line(self):
+        exe = _process_called("2.1.278", self.tmp)
+        if exe is None:
+            self.skipTest("no way to make a process called 2.1.278 here")
+        got = self._typed_into("'%s'" % exe)
+        self.assertEqual(got, b"\\\n")
+
+    def test_anywhere_else_it_is_enter(self):
+        got = self._typed_into("cat")
+        self.assertEqual(got, b"\n")
+

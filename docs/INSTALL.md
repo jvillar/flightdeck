@@ -223,8 +223,8 @@ next `flightdeck` puts it back. That is why you never have to touch your own
 `~/.tmux.conf`.
 
 **`flightdeck quit`** turns the cockpit off: the menus are killed and tmux gets its
-own status bar and its own keys back (`prefix + n` is "next window" again, F12 and
-`prefix + j` are unbound), and if you have a `~/.tmux.conf` of your own it is
+own status bar and its own keys back (`prefix + n` is "next window" again; F12,
+Shift+Enter and `prefix + j` are unbound), and if you have a `~/.tmux.conf` of your own it is
 sourced again so your settings come back on top. Your work sessions, their agents
 and your pinned sessions keep running, and `flightdeck` turns the cockpit back on
 whenever you want.
@@ -260,7 +260,7 @@ What happens, in order:
 4. **Pinned rows.** It notices the tools on your machine that have a ready-made
    pin and offers to add them (see [Pinned rows](#pinned-rows)).
 5. **The tmux keys.** If a live tmux server is running, it reads your bindings and
-   warns about any of F12, `prefix j` and `prefix n` that somebody else has
+   warns about any of F12, Shift+Enter, `prefix j` and `prefix n` that somebody else has
    already taken, saying what each one was bound to. It does not start a tmux
    server to find out.
 6. **The doctor**, whose report is printed in full and whose verdict is half of
@@ -298,7 +298,7 @@ and does not repair anything behind your back.
 It checks: the system; tmux, fzf and python3 with their versions; which agents are
 installed; whether the `flightdeck` command resolves on your PATH; `config.json`;
 the state directory; Claude Code's hooks; codex's and agy's hooks, when those
-tools are there; the status line for Claude Code and for agy; the three tmux keys;
+tools are there; the status line for Claude Code and for agy; the four tmux keys;
 your pins; the locale; and a note when you are on WSL2.
 
 Each line carries one of three marks, and the difference matters:
@@ -475,6 +475,12 @@ The ready-made ones:
 pin them. A preset whose tool is not installed can still be pinned; the doctor
 warns about it and tells you how that machine installs it. The hint is **printed,
 never run**.
+
+`cswap` is [`claude-swap`](https://github.com/realiti4/claude-swap), a
+multi-account switcher for Claude Code, and the one preset a fresh machine is
+least likely to have: `pipx install claude-swap` (or `uv tool install claude-swap`,
+or `python3 -m pip install --user claude-swap`), then `flightdeck pin add cswap`.
+`flightdeck install` says exactly this when it does not find it.
 
 Anything else works too:
 

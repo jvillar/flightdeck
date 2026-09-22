@@ -94,6 +94,7 @@ bind-key    -T prefix       c                 new-window
 bind-key    -T prefix       j                 run-shell -b "'/x/bin/flightdeck' goto-menu"
 bind-key    -T prefix       n                 run-shell -b "'/x/bin/flightdeck' _py flightdeck.handover handover '#{pane_id}'"
 bind-key    -T root         F12               if-shell -F '#{m/r:^flightdeck(-[0-9]+)?$,#{session_name}}' 'switch-client -l' 'run-shell -b "\\"/x/bin/flightdeck\\" goto-menu"'
+bind-key    -T root         S-Enter           if-shell -F "#{||:#{==:#{@flightdeck_agent},claude},#{m/r:^([0-9]+\\.[0-9]+\\.[0-9]+|claude|node)$,#{pane_current_command}}}" "send-keys -l \"\\\\\" ; send-keys Enter" "send-keys Enter"
 """
 
 # Somebody else got there first: F12 opens their notes, prefix j is their pane
@@ -954,7 +955,8 @@ class TestKeyCollisions(unittest.TestCase):
 
     def test_bindings_reports_what_is_there(self):
         self.assertEqual(doctor.bindings(STOCK_KEYS),
-                         {"F12": None, "prefix j": None, "prefix n": "next-window"})
+                         {"F12": None, "Shift+Enter": None, "prefix j": None,
+                          "prefix n": "next-window"})
 
 
 class TestTheBindingsCheck(unittest.TestCase):
@@ -971,7 +973,7 @@ class TestTheBindingsCheck(unittest.TestCase):
         self.assertIn("no live tmux server", check.detail)
         self.assertIn("flightdeck", check.fix)
 
-    def test_our_three_keys_pass(self):
+    def test_our_four_keys_pass(self):
         check = doctor.check_bindings(
             env_with(run=runner(has=(0, ""), keys=(0, OUR_KEYS))))
         self.assertIs(check.ok, True)

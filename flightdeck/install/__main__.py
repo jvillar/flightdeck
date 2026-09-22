@@ -59,6 +59,7 @@ PIN_QUESTION = "Found %s — pin %s to the menu? [Y/n]"
 # key is taken" without saying what takes it leaves the reader unable to decide
 # whether they mind.
 KEY_PURPOSE = {"F12": "menu toggle",
+               "Shift+Enter": "new line in Claude Code",
                "prefix j": "jump to the menu",
                "prefix n": "handover"}
 
@@ -201,8 +202,24 @@ def _pins_step(ask, interactive, which):
     print("✓ pinned %s" % _join(added))
 
 
+def _switcher_step(which):
+    """Say how to get the account switcher when it is not here.
+
+    The `⚙ accounts` row is `cswap`, the `claude-swap` package: the one preset
+    people expect to find after reading about accounts, and the one a fresh
+    machine is least likely to have. Like every other hint, it is printed and
+    never run.
+    """
+    if which("cswap"):
+        return
+    print("cswap, the account switcher behind the ⚙ accounts row, is not on this "
+          "machine")
+    print("  install it with: %s" % pins.hint_for("cswap"))
+    print("  then `flightdeck pin add cswap` puts the row in the menu")
+
+
 def _keys_step(run):
-    """Warn about the three tmux keys somebody else has already taken (R3).
+    """Warn about the four tmux keys somebody else has already taken.
 
     `has-session` FIRST, and it is not a nicety: measured on tmux 3.6a, with no
     server running `list-keys` exits 0, prints tmux's STOCK table -- so the
@@ -227,7 +244,8 @@ def _keys_step(run):
         print("could not read the tmux keys: %s" % exc)
         return
     if not collisions:
-        print("F12, prefix j and prefix n are free (or already Flightdeck's)")
+        print("F12, Shift+Enter, prefix j and prefix n are free (or already "
+              "Flightdeck's)")
         return
     for label, command in collisions:
         print("⚠ %s was bound to `%s`; Flightdeck's %s takes it when you enter "
@@ -335,6 +353,7 @@ def main(argv=None, ask=None, isatty=None, which=None, run=None):
         print("agy: not found, skipped")
 
     _pins_step(ask, interactive, which)
+    _switcher_step(which)
     _keys_step(run)
 
     # The doctor through its own printer, so what is read here is word for word

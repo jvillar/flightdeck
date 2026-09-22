@@ -88,16 +88,19 @@ PRESETS = {
                           "newer), else https://github.com/aristocratos/btop#installation"},
     },
     "cswap": {
-        # A personal account switcher. It opens its TUI and nothing else: a
-        # Flightdeck that rotated accounts by itself would be automating around
-        # a provider's limits, which is vetoed and stays vetoed.
+        # `claude-swap`, a multi-account switcher for Claude Code (a PyPI
+        # package: https://github.com/realiti4/claude-swap). The row opens its
+        # TUI and nothing else: a Flightdeck that rotated accounts by itself
+        # would be automating around a provider's limits, which is vetoed and
+        # stays vetoed.
         "label": "⚙ accounts",
         "command": "cswap tui",
         "session": "cswap",
-        "hint": {"darwin": "cswap is a personal account switcher, not a package "
-                           "-- pin your own tool with --label and --command",
-                 "linux": "cswap is a personal account switcher, not a package "
-                          "-- pin your own tool with --label and --command"},
+        "hint": {"darwin": "pipx install claude-swap   (or: uv tool install "
+                           "claude-swap) -- https://github.com/realiti4/claude-swap",
+                 "linux": "pipx install claude-swap   (or: python3 -m pip install "
+                          "--user claude-swap) -- "
+                          "https://github.com/realiti4/claude-swap"},
     },
     "lazygit": {
         "label": "🌿 lazygit",

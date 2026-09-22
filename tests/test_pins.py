@@ -494,3 +494,19 @@ class TestCli(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheSwitcherHint(unittest.TestCase):
+    """`cswap` is the `claude-swap` package, and the hint has to say how to get it.
+
+    The port took it for a personal tool with nothing to install; a colleague
+    on a fresh machine then found no accounts row and no way to get one.
+    """
+
+    def test_the_hint_installs_claude_swap_on_both_platforms(self):
+        for platform in ("darwin", "linux"):
+            hint = pins.hint_for("cswap", platform)
+            self.assertIn("claude-swap", hint, platform)
+            self.assertIn("pipx install claude-swap", hint, platform)
+            self.assertIn("github.com/realiti4/claude-swap", hint, platform)
+

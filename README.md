@@ -49,6 +49,7 @@ or WSL2. Everything else is in [`docs/INSTALL.md`](docs/INSTALL.md).
 | **Ctrl-N** | a new, empty session: a shell you launch whatever you like in |
 | **F12** | the switch between the menu and the session you came from |
 | **prefix + n** | the handover: close the agent in this pane, open a fresh one in its place |
+| **Shift+Enter** | a new line in Claude Code, inside tmux too |
 
 `prefix` is tmux's leading key, `Ctrl-b` out of the box.
 
