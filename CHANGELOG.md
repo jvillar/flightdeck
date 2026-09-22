@@ -8,33 +8,7 @@ The heading of a released version carries its date. `release.yml` reads the
 section for the tag it is building and makes it the release notes, so a version
 with no section here does not get released.
 
-## Unreleased
-
-### Added
-
-- **The status line is three lines now**, which is the line it was ported from:
-  who you are (the model, the account you are signed in with, the folder and
-  branch), what you have spent (a fifteen-cell context bar, then every rate
-  limit with its own bar and reset time), and the tokens. Each line fits itself
-  to the pane on its own, so a narrow terminal loses the branch and the reset
-  times rather than a bar. `"statusline": {"lines": 2}` in `config.json` brings
-  back the compressed two-line layout.
-- **The account you are signed in with, in the status line**: `👤` and your
-  address after the model, with your plan beside it. The address comes from
-  `~/.claude.json` and the plan from your Claude Code credentials (the keychain
-  on macOS); Antigravity sends both itself, so one key covers both lines.
-  Neither value is ever written down or put in a notice, and on a narrow pane
-  this is the last thing the first line drops. A status line does end up in
-  screenshots and screen shares: `"statusline": {"account": false}` takes it
-  off.
-- **Two lines under the menu that follow the cursor**: the folder of the
-  highlighted session and its git branch, then the tool, the conversation's
-  whole title, its state in plain words, its age and the first eight characters
-  of its id. It is there so two sessions of the same project stop looking
-  alike. `?` hides it and shows it again; while it is bound to the strip, a
-  question mark can no longer be typed into the search box.
-
-## v0.1.0 — unreleased
+## v0.1.0 — 2026-09-22
 
 The first release.
 
@@ -57,6 +31,26 @@ The first release.
   and Antigravity.
 - **One status line** for Claude Code and Antigravity, in the mode you choose:
   Flightdeck's own, wrapped around the one you already had, or both stacked.
+- **A status line of three lines**: who you are (the model, the account you are signed in with, the folder and
+  branch), what you have spent (a fifteen-cell context bar, then every rate
+  limit with its own bar and reset time), and the tokens. Each line fits itself
+  to the pane on its own, so a narrow terminal loses the branch and the reset
+  times rather than a bar. `"statusline": {"lines": 2}` in `config.json` brings
+  back the compressed two-line layout.
+- **The account you are signed in with, in the status line**: `👤` and your
+  address after the model, with your plan beside it. The address comes from
+  `~/.claude.json` and the plan from your Claude Code credentials (the keychain
+  on macOS); Antigravity sends both itself, so one key covers both lines.
+  Neither value is ever written down or put in a notice, and on a narrow pane
+  this is the last thing the first line drops. A status line does end up in
+  screenshots and screen shares: `"statusline": {"account": false}` takes it
+  off.
+- **Two lines under the menu that follow the cursor**: the folder of the
+  highlighted session and its git branch, then the tool, the conversation's
+  whole title, its state in plain words, its age and the first eight characters
+  of its id. It is there so two sessions of the same project stop looking
+  alike. `?` hides it and shows it again; while it is bound to the strip, a
+  question mark can no longer be typed into the search box.
 - **Pinned rows**: fixed entries for the commands you keep open — right after
   your live sessions and before the history — with presets so `flightdeck pin add
   htop` is all you have to type.
